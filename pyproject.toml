@@ -32,4 +32,3 @@ line-length = 88
 [tool.mypy]
 ignore_missing_imports = true
 no_strict_optional = true
-
