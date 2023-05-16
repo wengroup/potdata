@@ -132,7 +132,7 @@ class StrainTransformation(AbstractTransformation):
         return np.asarray([-0.02, -0.01, 0.01, 0.02])
 
 
-class PertubationTransformation(AbstractTransformation):
+class PerturbTransformation(AbstractTransformation):
     """
     Perturb the coordinates of atoms in a structure.
 

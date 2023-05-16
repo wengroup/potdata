@@ -1,5 +1,5 @@
 import numpy as np
-from potdata.transformations import PertubationTransformation, StrainTransformation
+from potdata.transformations import PerturbTransformation, StrainTransformation
 
 
 def test_strain_transformation(Si_structure):
@@ -21,7 +21,7 @@ def test_pertubation_transformation(Si_structure):
     num_struct = 10
     low = 0.1
     high = 0.3
-    pt = PertubationTransformation(num_structures=num_struct, low=low, high=high)
+    pt = PerturbTransformation(num_structures=num_struct, low=low, high=high)
     transformed_structures = pt.apply_transformation(Si_structure)
 
     # only select the atom whose initial position is not (0, 0, 0).
