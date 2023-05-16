@@ -33,6 +33,11 @@ ignore = ["E501"]
 [tool.ruff.per-file-ignores]
 "__init__.py" = ["F401"]
 
+# This duplicates the functionlity of ruff but it is nicer to have it for pycharm usage:
+# ruff will move cursor to the bottom, while isort will not.
+[tool.isort]
+src_paths = ["src", "tests"]
+
 [tool.black]
 line-length = 88
 
