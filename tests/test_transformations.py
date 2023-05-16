@@ -17,12 +17,16 @@ def test_strain_transformation(Si_structure):
         assert "deformation" in d
 
 
-def test_pertubation_transformation(Si_structure):
+def test_perturb_transformation(Si_structure):
     num_struct = 10
     low = 0.1
     high = 0.3
     pt = PerturbTransformation(num_structures=num_struct, low=low, high=high)
     transformed_structures = pt.apply_transformation(Si_structure)
+
+    for d in transformed_structures:
+        assert "structure" in d
+        assert "index" in d
 
     # only select the atom whose initial position is not (0, 0, 0).
     # the (0, 0, 0) atom can be perturbed to the other side of the cell due to PBC.

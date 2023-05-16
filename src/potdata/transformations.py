@@ -61,7 +61,7 @@ class StrainTransformation(AbstractTransformation):
         self.sym_reduce = sym_reduce
         self.symprec = symprec
 
-    def apply_transformation(self, structure: Structure):
+    def apply_transformation(self, structure: Structure) -> list[dict]:
         """
         Apply the transformation to a structure.
 
@@ -69,7 +69,11 @@ class StrainTransformation(AbstractTransformation):
             structure: Structure to transform.
 
         Returns:
-            Transformed structure.
+            A list of dict {"structure": structure, "other_key": other_value }, where
+            there could be multiple other key value pairs. The other key value pairs
+            are necessary information to reconstruct the transformation. For example,
+            here for the strain transformation, the other key value pair is the
+            deformation gradient matrix.
         """
 
         if self.conventional:
@@ -174,7 +178,7 @@ class PerturbTransformation(AbstractTransformation):
 
         np.random.seed(self.seed)
 
-    def apply_transformation(self, structure: Structure):
+    def apply_transformation(self, structure: Structure) -> list[dict]:
         """
         Apply the transformation to a structure.
 
@@ -182,7 +186,11 @@ class PerturbTransformation(AbstractTransformation):
             structure: Structure to transform.
 
         Returns:
-            Transformed structure.
+            A list of dict {"structure": structure, "other_key": other_value }, where
+            there could be multiple other key value pairs. The other key value pairs
+            are necessary information to reconstruct the transformation. For example,
+            here the other key value pair is just the index of the newly
+            generated structure.
         """
         perturbed_structures = []
         for i in range(self.num_structures):
@@ -200,7 +208,7 @@ class PerturbTransformation(AbstractTransformation):
             else:
                 s = self._perturb_a_structure(structure)
 
-            perturbed_structures.append({"structure": s})
+            perturbed_structures.append({"structure": s, "index": i})
 
         return perturbed_structures
 
