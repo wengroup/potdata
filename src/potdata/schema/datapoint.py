@@ -1,5 +1,6 @@
 """Define fitting data point that contains configuration, property, weight etc."""
 
+
 from typing import Union
 
 import numpy as np
@@ -15,7 +16,6 @@ from potdata._typing import Matrix3D, Vector3D
 from potdata.utils.suuid import suuid
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
-
 __all__ = ["Configuration", "Property", "Weight", "DataPoint", "DataCollection"]
 
 
@@ -26,7 +26,6 @@ class Provenance(BaseModel):
         None,
         description="The uuid of the job that generated the data.",
     )
-
     task_type: Union[TaskType, str] = Field(
         None,
         description="atomate2 task type of the job that generated the data, "

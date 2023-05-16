@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 from atomate2.vasp.schemas.task import TaskDocument
 from monty.serialization import loadfn
-from potdata.schema.datapoint import DataCollection, DataPoint
 from pymatgen.core import Structure
+
+from potdata.schema.datapoint import DataCollection, DataPoint
 
 
 @pytest.fixture(scope="session")
