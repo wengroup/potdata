@@ -37,25 +37,30 @@ class TransformationChain(AbstractTransformation):
             A list of transformed structures. Each transformed structure is specified
             in a dict:
 
-            {"structure": structure, "steps": [step1, step2, ...]}
+            {"structure": structure, "chain_steps": [step1, step2, ...]}
 
-            where steps stores the history of the transformation. Each step is a dict
-            corresponding to a transformation applied in the chain:
+            where chain_steps stores the history of the transformation. Each step is a
+            dict corresponding to a transformation applied in the chain:
 
-            {"input_structure": structure,
-            "transformation": transformation,
-            'tranformation_meta'}
+            {"transformation": transformation,
+             "input_structure": in_structure,
+             "output_structure": out_structure,
+             "tranformation_meta": other_data_for_a_specific_structure
+            }
 
-            where `transformation` specifies the data in the transformation class
-            applied in this step. Note that a transforamtion class can generate multiple
-            structures, and thus `transformation` will be the same for all structures
-            generated using the same transformation, but `transformation_meta` specifies
-            the metadata for a specific structrue obtained using a one-to-many
-            transformation.
+            where `transformation` specifies the transformation class applied in this
+            step. `input_structure` and `output_structure` are the structure before and
+            after the transformation. Note that a transforamtion class may generate
+            multiple structures when `transformation.is_one_to_many` is True. In this
+            case, although `transformation` and `input_structure` is the same,
+            `output_structure` will be different for each structure generated.
+            In additional, `transformation_meta` specifies the metadata for a specific
+            structrue obtained using a one-to-many transformation. For non one-to-many
+            transformation, `transformation_meta` is an empty dict.
         """
 
         # steps keep track of the history of the transformation
-        transformed_structures = [{"structure": structure, "steps": []}]
+        transformed_structures = [{"structure": structure, "chain_steps": []}]
 
         # loop over transformations
         for i, t in enumerate(self.transformations):
@@ -64,7 +69,7 @@ class TransformationChain(AbstractTransformation):
             # loop over current structures
             for struct_step_dict in transformed_structures:
                 struct = struct_step_dict.pop("structure")
-                steps = struct_step_dict.pop("steps")
+                steps = struct_step_dict.pop("chain_steps")
 
                 structures = t.apply_transformation(struct)
 
@@ -80,14 +85,15 @@ class TransformationChain(AbstractTransformation):
                     new_meta = new_struct_meta_dict
 
                     step_dict = {
-                        "input_structure": struct.as_dict(),
                         "transformation": t.as_dict(),
+                        "input_structure": struct.as_dict(),
+                        "output_structure": new_struct.as_dict(),
                         "transformation_meta": new_meta,
                     }
                     new_steps = steps.copy()
                     new_steps.append(step_dict)
 
-                    d = {"structure": new_struct, "steps": new_steps}
+                    d = {"structure": new_struct, "chain_steps": new_steps}
                     new_transformed_structures.append(d)
 
             transformed_structures = new_transformed_structures

@@ -10,11 +10,12 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = [
     "scipy",
+    "atomate2",
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
-doc = ["jupyter-book","ipython"]
+doc = ["jupyter-book", "ipython"]
 
 [tool.versioningit.vcs]
 method = "git"
