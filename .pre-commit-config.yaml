@@ -37,3 +37,11 @@ repos:
     rev: v3.0.0-alpha.9-for-vscode
     hooks:
       - id: prettier
+#
+#  - repo: https://github.com/codespell-project/codespell
+#    rev: v2.2.4
+#    hooks:
+#      - id: codespell
+#        stages: [commit, commit-msg]
+#        args: [--ignore-words-list, "statics,nd"]
+#        types_or: [python, markdown]
