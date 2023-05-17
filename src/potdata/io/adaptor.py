@@ -21,8 +21,7 @@ from scipy.spatial import distance_matrix
 
 from potdata._typing import Matrix3D, PathLike, Vector3D
 from potdata.schema.datapoint import Configuration, DataCollection, DataPoint, Property
-from potdata.utils.dataops import slice_sequence
-from potdata.utils.misc import remove_none_from_dict
+from potdata.utils.dataops import remove_none_from_dict, slice_sequence
 from potdata.utils.path import create_directory, to_path
 from potdata.utils.units import kbar_to_eV_per_A_cube
 

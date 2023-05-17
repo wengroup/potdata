@@ -6,7 +6,7 @@ from potdata.io.adaptor import (
     VasprunAdaptor,
     VasprunCollectionAdaptor,
 )
-from potdata.utils.misc import set_field_precision, set_field_to_none
+from potdata.utils.dataops import set_field_precision, set_field_to_none
 from potdata.utils.path import to_path
 
 
