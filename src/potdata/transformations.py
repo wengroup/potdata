@@ -54,7 +54,7 @@ class StrainTransformation(AbstractTransformation):
         )
         self.strain_magnitudes = (
             np.asarray(strain_magnitudes)
-            if strain_states
+            if strain_magnitudes
             else self._get_default_strain_magnitudes()
         )
         self.conventional = conventional
@@ -111,6 +111,7 @@ class StrainTransformation(AbstractTransformation):
 
         return deformed_structures
 
+    @property
     def is_one_to_many(self) -> bool:
         return True
 
@@ -212,6 +213,7 @@ class PerturbTransformation(AbstractTransformation):
 
         return perturbed_structures
 
+    @property
     def is_one_to_many(self) -> bool:
         return True
 

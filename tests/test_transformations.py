@@ -17,6 +17,23 @@ def test_strain_transformation(Si_structure):
         assert "structure" in d
         assert "deformation" in d
 
+    strain_states = [[1, 1, 1, 0, 0, 0], [1, 0, 0, 0, 0, 0]]
+    strain_magnitudes = [0.1, 0.2]
+
+    st = StrainTransformation(strain_states=strain_states)
+    transformed_structures = st.apply_transformation(Si_structure)
+    assert len(transformed_structures) == len(strain_states) * 4
+
+    st = StrainTransformation(strain_magnitudes=strain_magnitudes)
+    transformed_structures = st.apply_transformation(Si_structure)
+    assert len(transformed_structures) == 7 * len(strain_magnitudes)
+
+    st = StrainTransformation(
+        strain_states=strain_states, strain_magnitudes=strain_magnitudes
+    )
+    transformed_structures = st.apply_transformation(Si_structure)
+    assert len(transformed_structures) == len(strain_states) * len(strain_magnitudes)
+
 
 def test_perturb_transformation(Si_structure):
     num_struct = 10
