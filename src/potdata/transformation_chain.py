@@ -100,9 +100,10 @@ class TransformationChain(AbstractTransformation):
 
         return transformed_structures
 
+    @property
     def is_one_to_many(self):
         for t in self.transformations:
-            if t.is_one_to_many():
+            if t.is_one_to_many:
                 return True
         return False
 
