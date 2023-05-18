@@ -11,6 +11,7 @@ dynamic = ["version"]
 dependencies = [
     "scipy",
     "atomate2",
+    "ase"
 ]
 
 [project.optional-dependencies]

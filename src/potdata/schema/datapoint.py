@@ -6,8 +6,8 @@ from typing import Union
 import numpy as np
 from ase import Atoms
 from atomate2.vasp.schemas.calc_types.enums import TaskType
-from atomate2.vasp.schemas.calculation import IonicStep
-from atomate2.vasp.schemas.task import OutputSummary
+from emmet.core.tasks import OutputDoc
+from emmet.core.vasp.calculation import IonicStep
 from pydantic import BaseModel, Field
 from pymatgen.core.structure import Structure
 
@@ -160,7 +160,7 @@ class DataPoint(BaseModel):
     @classmethod
     def from_output_summary(
         cls,
-        output: OutputSummary,
+        output: OutputDoc,
         weight: Weight = None,
         job_uuid: str | None = None,
         task_type: str | None = None,
