@@ -4,16 +4,28 @@ structures.
 
 The transformations are similar to pymatgen.transformations.standard_transformations.
 """
+import abc
+import os
+import tempfile
 
 import numpy as np
+from monty.dev import requires
 from pymatgen.analysis.elasticity import Strain
 from pymatgen.core.structure import Structure
 from pymatgen.core.tensors import symmetry_reduce
+from pymatgen.core.trajectory import Trajectory
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import (
     DeformStructureTransformation,
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
+
+from potdata.sampler import BaseSampler, SliceSampler
+
+try:
+    import m3gnet
+except ImportError:
+    m3gnet = None
 
 
 class StrainTransformation(AbstractTransformation):
@@ -224,3 +236,179 @@ class PerturbTransformation(AbstractTransformation):
         s = structure.copy()
         s.perturb(distance=self.high, min_distance=self.low)
         return s
+
+
+class BaseMDTransformation(AbstractTransformation):
+    """
+    Perform a molecular dynamics simulation and sample structures from the trajectory.
+
+    Args:
+        ensemble: ensemble for MD. Options are "nvt" and "npt".
+        temperature: temperature for MD, in K.
+        timestep: timestep for MD, in fs.
+        steps: number of MD steps.
+        sampler: sampler to use to sample structures from the MD trajectory.
+    """
+
+    def __init__(
+        self,
+        ensemble: str = "nvt",
+        temperature: float = 300,
+        timestep: float = 1,
+        steps: int = 1000,
+        sampler: BaseSampler = SliceSampler(slice(0, 10, None)),
+    ):
+        self.ensemble = ensemble
+        self.temperature = temperature
+        self.timestep = timestep
+        self.steps = steps
+        self.sampler = sampler
+
+    def apply_transformation(self, structure: Structure) -> list[Structure]:
+        trajectory = self.run_md(structure)
+        frame_indices = list(range(len(trajectory)))
+        selected = self.sampler.sample(frame_indices)
+        structures = [trajectory.get_structure(i) for i in selected]
+
+        return structures
+
+    @abc.abstractmethod
+    def run_md(self, structure: Structure) -> Trajectory:
+        """
+        Run a molecular dynamics simulation on a structure.
+
+        Args:
+            structure: Structure to run simulation on.
+
+        Returns:
+            Trajectory object.
+        """
+
+    @property
+    def is_one_to_many(self) -> bool:
+        return True
+
+    def inverse(self):
+        return None
+
+
+class M3gnetMDTransformation(BaseMDTransformation):
+    @requires(
+        m3gnet,
+        "`m3gnet` is needed for this transformation. To install it, see "
+        "https://github.com/materialsvirtuallab/m3gnet",
+    )
+    def run_md(self, structure: Structure) -> Trajectory:
+        from ase.io import Trajectory as ASE_Trajectory
+        from m3gnet.models import MolecularDynamics
+        from pymatgen.io.ase import AseAtomsAdaptor
+
+        if "nvt" in self.ensemble.lower():
+            constant_lattice = True
+        elif "npt" in self.ensemble.lower():
+            constant_lattice = False
+        else:
+            supported = ["nvt", "npt"]
+            raise ValueError(
+                f"Unknown ensemble: {self.ensemble}. Supported are {supported}."
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            os.chdir(tmp_dir)
+
+            md = MolecularDynamics(
+                atoms=structure,
+                ensemble=self.ensemble,
+                temperature=self.temperature,
+                timestep=self.timestep,
+                trajectory="md.traj",
+                logfile=None,
+            )
+
+            md.run(steps=self.steps)
+
+            ase_traj = ASE_Trajectory("md.traj")
+
+        adaptor = AseAtomsAdaptor()
+        structures = [adaptor.get_structure(ase_traj[i]) for i in range(len(ase_traj))]
+        traj = Trajectory.from_structures(structures, constant_lattice=constant_lattice)
+
+        return traj
+
+
+# TODO this is obsolete, need adapting
+# @dataclass
+# class CoherentStructureMaker(StructureComposeMaker):
+#     """
+#     Maker to generate multiple strained structures.
+#
+#     Args:
+#         interface_gap: Distance between two slabs when interfaced (default: 2 angstroms)
+#         slab1_thickness: Thickness of structure 1 slab; scaled by how many unit cells.
+#             Note this value corresponds to a multiplier.e.g slab1_thickness: 2 implies
+#             two unit cell of slab1 is used in the interfaced structure. (default: 1)
+#         slab2_thickness: Same properties as slab1, except for second slab structure
+#         slab1_miller_indices_upper_limit: highest miller indices value
+#             e.g slab1_miller_indices_upper_limit:3 yields only miller indices matches
+#             below (333) (default: 2)
+#         slab2_miller_indices_upper_limit: Same properties as slab1, except for second
+#             slab structure
+#     """
+#
+#     name: str = "coherent interface structure job"
+#     interface_gap: float = 2
+#     slab1_thickness: float = 1
+#     slab2_thickness: float = 1
+#     slab1_miller_max: int = 2
+#     slab2_miller_max: int = 2
+#     miller_indices_matches: list[tuple] = None
+#
+#     def miller_matches(self, struc1, struc2) -> set[tuple[Any, Any]]:
+#         sa = SubstrateAnalyzer(self.slab1_miller_max, self.slab2_miller_max)
+#         matches = list(sa.calculate(substrate=struc1, film=struc2))
+#         new_match = []
+#         for match in matches:
+#             new_match.append((match.film_miller, match.substrate_miller))
+#         return set(new_match)
+#
+#     def compose_structure(  # type: ignore[override]
+#         self, structure: tuple[Structure, Structure]
+#     ) -> list[Structure]:
+#         """
+#         Generates list of all interfaced structures from Structure1 and Structure2.
+#
+#         Args:
+#             structure: Parent structures to create the interface.
+#
+#         Returns:
+#             Interfaced structures generated from the two parent structure.
+#         """
+#         struct1 = SpacegroupAnalyzer(structure[0]).get_conventional_standard_structure()
+#         struct2 = SpacegroupAnalyzer(structure[1]).get_conventional_standard_structure()
+#
+#         miller_matches = self.miller_matches(struct1, struct2)
+#         all_interfaces = []
+#         for millerindex in miller_matches:
+#             cib = CoherentInterfaceBuilder(
+#                 substrate_structure=struct1,
+#                 film_structure=struct2,
+#                 film_miller=millerindex[1],
+#                 substrate_miller=millerindex[0],
+#             )
+#             for termination in cib.terminations:
+#                 interfaces = list(
+#                     cib.get_interfaces(
+#                         termination,
+#                         gap=self.interface_gap,
+#                         vacuum_over_film=self.interface_gap,
+#                     )
+#                 )
+#                 all_interfaces.extend(interfaces)
+#
+#         # The following lines removes structures that are too similar made from CoherentInterfaceBuilder
+#         shortened_interfaces = []
+#         for interface in all_interfaces:
+#             if interface not in shortened_interfaces:
+#                 shortened_interfaces.append(interface)
+#
+#         return shortened_interfaces
