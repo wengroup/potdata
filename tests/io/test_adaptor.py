@@ -10,12 +10,13 @@ from potdata.utils.dataops import set_field_precision, set_field_to_none
 from potdata.utils.path import to_path
 
 
+# NOTE, tmpdir is a pytest builtin fixture
 def test_vasprun_adaptor(tmpdir, test_data_dir):
-    ourcar = test_data_dir / "vasp/Si_double_relax/relax_2/outputs/vasprun.xml.gz"
+    vasprun = test_data_dir / "vasp/Si_double_relax/relax_2/outputs/vasprun.xml.gz"
 
     with tmpdir.as_cwd():
         adaptor = VasprunAdaptor()
-        datapoints = adaptor.read(ourcar)
+        datapoints = adaptor.read(vasprun)
 
     assert len(datapoints) == 1
 
