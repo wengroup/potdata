@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pymatgen.analysis.structure_analyzer import SpacegroupAnalyzer
 
 from potdata.sampler import SliceSampler
@@ -7,6 +8,11 @@ from potdata.transformations import (
     PerturbTransformation,
     StrainTransformation,
 )
+
+try:
+    import m3gnet
+except ImportError:
+    m3gnet = None
 
 
 def test_strain_transformation(Si_structure):
@@ -67,6 +73,7 @@ def test_perturb_transformation(Si_structure):
         assert np.min(distances) >= low
 
 
+@pytest.mark.skipif(m3gnet is None, reason="m3gnet is not installed")
 def test_md_transformation(Si_structure):
     # get a conventional cell
     sga = SpacegroupAnalyzer(Si_structure)
