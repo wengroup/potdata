@@ -19,6 +19,7 @@ from pymatgen.transformations.standard_transformations import (
 from pymatgen.transformations.transformation_abc import AbstractTransformation
 
 from potdata.sampler import BaseSampler, SliceSampler
+from potdata.utils.dataops import serializable_slice
 
 try:
     import m3gnet
@@ -254,7 +255,7 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: float = 300,
         timestep: float = 1,
         steps: int = 1000,
-        sampler: BaseSampler = SliceSampler(slice(0, None, 10)),
+        sampler: BaseSampler = SliceSampler(serializable_slice(None)),
     ):
         self.ensemble = ensemble
         self.temperature = temperature
@@ -326,7 +327,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
             temperature=self.temperature,
             timestep=self.timestep,
             trajectory="md.traj",
-            logfile=None,
+            logfile="md.log",
         )
 
         md.run(steps=self.steps)

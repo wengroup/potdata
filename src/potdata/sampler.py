@@ -5,7 +5,7 @@ from typing import Any, Iterable
 import numpy as np
 from monty.json import MSONable
 
-from potdata.utils.dataops import slice_sequence
+from potdata.utils.dataops import serializable_slice, slice_sequence
 
 __all__ = ["RandomSampler", "SliceSampler"]
 
@@ -87,7 +87,7 @@ class SliceSampler(BaseSampler):
             will select data points with indices 0, 2, 4,...).
     """
 
-    def __init__(self, slicer: slice | list[int]):
+    def __init__(self, slicer: list[int] | serializable_slice):
         self.slicer = slicer
         self._indices: list[int] = None
 

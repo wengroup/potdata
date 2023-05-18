@@ -8,6 +8,7 @@ from potdata.transformations import (
     PerturbTransformation,
     StrainTransformation,
 )
+from potdata.utils.dataops import serializable_slice
 
 try:
     import m3gnet
@@ -84,7 +85,10 @@ def test_md_transformation(Si_structure, tmpdir):
 
     with tmpdir.as_cwd():
         mt = M3gnetMDTransformation(
-            ensemble="nvt", steps=10, sampler=SliceSampler(slicer=slice(5, None, 2))
+            ensemble="nvt",
+            temperature=300,
+            steps=10,
+            sampler=SliceSampler(slicer=serializable_slice(5, None, 2)),
         )
         structures = mt.apply_transformation(structure)
 
