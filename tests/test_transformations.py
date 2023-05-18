@@ -74,7 +74,7 @@ def test_perturb_transformation(Si_structure):
 
 
 @pytest.mark.skipif(m3gnet is None, reason="m3gnet is not installed")
-def test_md_transformation(Si_structure):
+def test_md_transformation(Si_structure, tmpdir):
     # get a conventional cell
     sga = SpacegroupAnalyzer(Si_structure)
     structure = sga.get_conventional_standard_structure()
@@ -82,12 +82,14 @@ def test_md_transformation(Si_structure):
     # increase number of cells
     structure.make_supercell([2, 2, 2])
 
-    mt = M3gnetMDTransformation(
-        ensemble="nvt", steps=10, sampler=SliceSampler(slicer=slice(5, None, 2))
-    )
-    structures = mt.apply_transformation(structure)
+    with tmpdir.as_cwd():
+        mt = M3gnetMDTransformation(
+            ensemble="nvt", steps=10, sampler=SliceSampler(slicer=slice(5, None, 2))
+        )
+        structures = mt.apply_transformation(structure)
 
     assert len(structures) == 3
     for s in structures:
+        s = s["structure"]
         assert len(s) == 64
         assert s.lattice == structure.lattice

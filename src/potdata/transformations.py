@@ -5,8 +5,6 @@ structures.
 The transformations are similar to pymatgen.transformations.standard_transformations.
 """
 import abc
-import os
-import tempfile
 
 import numpy as np
 from monty.dev import requires
@@ -202,8 +200,8 @@ class PerturbTransformation(AbstractTransformation):
             A list of dict {"structure": structure, "other_key": other_value }, where
             there could be multiple other key value pairs. The other key value pairs
             are necessary information to reconstruct the transformation. For example,
-            here the other key value pair is just the index of the newly
-            generated structure.
+            here the other key value pair is just the index of the newly generated
+            structure.
         """
         perturbed_structures = []
         for i in range(self.num_structures):
@@ -256,7 +254,7 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: float = 300,
         timestep: float = 1,
         steps: int = 1000,
-        sampler: BaseSampler = SliceSampler(slice(0, 10, None)),
+        sampler: BaseSampler = SliceSampler(slice(0, None, 10)),
     ):
         self.ensemble = ensemble
         self.temperature = temperature
@@ -264,11 +262,20 @@ class BaseMDTransformation(AbstractTransformation):
         self.steps = steps
         self.sampler = sampler
 
-    def apply_transformation(self, structure: Structure) -> list[Structure]:
+    def apply_transformation(self, structure: Structure) -> list[dict]:
+        """
+        Returns:
+            A list of dict: {'structure': structure, 'index': index}
+            where `index` specifies the frame of the structure in the trajectory.
+        """
+
         trajectory = self.run_md(structure)
         frame_indices = list(range(len(trajectory)))
         selected = self.sampler.sample(frame_indices)
-        structures = [trajectory.get_structure(i) for i in selected]
+
+        structures = [
+            {"structure": trajectory.get_structure(i), "index": i} for i in selected
+        ]
 
         return structures
 
@@ -313,21 +320,18 @@ class M3gnetMDTransformation(BaseMDTransformation):
                 f"Unknown ensemble: {self.ensemble}. Supported are {supported}."
             )
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            os.chdir(tmp_dir)
+        md = MolecularDynamics(
+            atoms=structure,
+            ensemble=self.ensemble,
+            temperature=self.temperature,
+            timestep=self.timestep,
+            trajectory="md.traj",
+            logfile=None,
+        )
 
-            md = MolecularDynamics(
-                atoms=structure,
-                ensemble=self.ensemble,
-                temperature=self.temperature,
-                timestep=self.timestep,
-                trajectory="md.traj",
-                logfile=None,
-            )
+        md.run(steps=self.steps)
 
-            md.run(steps=self.steps)
-
-            ase_traj = ASE_Trajectory("md.traj")
+        ase_traj = ASE_Trajectory("md.traj")
 
         adaptor = AseAtomsAdaptor()
         structures = [adaptor.get_structure(ase_traj[i]) for i in range(len(ase_traj))]
