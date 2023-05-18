@@ -17,7 +17,7 @@ class BaseSampler(MSONable):
     def sample(
         self, data: Iterable, return_indices: bool = False
     ) -> list[Any] | list[int]:
-        """Run the sampler to a subset of the data.
+        """Run the sampler to sample a subset of the data.
 
         Args:
             data: data to sample from.
@@ -27,6 +27,13 @@ class BaseSampler(MSONable):
 
         Returns:
             A list of data or indices.
+        """
+
+    @property
+    @abc.abstractmethod
+    def indices(self) -> list[int]:
+        """
+        Return the indices of the data that has been sampled.
         """
 
 
@@ -41,6 +48,7 @@ class RandomSampler(BaseSampler):
     def __init__(self, size: int, seed: int = 35):
         self.size = size
         self.seed = seed
+        self._indices: list[int] = None
         np.random.seed(self.seed)
 
     def sample(
@@ -54,14 +62,18 @@ class RandomSampler(BaseSampler):
                 f"number f data points `{len(data)}`."
             )
 
-        indices: list[int] = np.random.randint(
-            low=0, high=len(data), size=self.size
-        ).tolist()  # type: ignore
+        self._indices = list(
+            np.random.randint(low=0, high=len(data), size=self.size).tolist()  # type: ignore
+        )
 
         if return_indices:
-            return indices
+            return self._indices  # ty
         else:
-            return [data[i] for i in indices]
+            return [data[i] for i in self._indices]
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
 
 
 class SliceSampler(BaseSampler):
@@ -77,13 +89,18 @@ class SliceSampler(BaseSampler):
 
     def __init__(self, slicer: slice | list[int]):
         self.slicer = slicer
+        self._indices: list[int] = None
 
     def sample(
         self, data: Iterable, return_indices: bool = False
     ) -> list[Any] | list[int]:
-        selected, indices = slice_sequence(data, self.slicer)
+        selected, self._indices = slice_sequence(data, self.slicer)
 
         if return_indices:
-            return indices
+            return self._indices
         else:
             return selected
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
