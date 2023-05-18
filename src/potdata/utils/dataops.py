@@ -5,9 +5,39 @@ import copy
 import warnings
 from typing import Any, Iterable
 
+from monty.json import MSONable
+
+
+class serializable_slice(MSONable):
+    """
+    A wrapper class around `slice` to make it serializable.
+
+    See Python documentation for more information about `slice`.
+
+    The difference is that you need to call the `to_slice` method to convert it to a
+    `slice` object. After this, using it as a regular `slice` object.
+    """
+
+    def __init__(self, *args):
+        self.args = args
+
+    def to_slice(self) -> slice:
+        return slice(*self.args)
+
+    def as_dict(self):
+        return {
+            "@module": self.__class__.__module__,
+            "@class": self.__class__.__name__,
+            "args": self.args,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(*d["args"])
+
 
 def slice_sequence(
-    data: Iterable[Any], slicer: int | list[int] | slice | None
+    data: Iterable[Any], slicer: int | list[int] | serializable_slice | slice | None
 ) -> tuple[list[Any], list[int]]:
     """
     Slice a list of data.
@@ -20,9 +50,9 @@ def slice_sequence(
             2. If a list of integers is provided, the corresponding indices are
             selected. For example, `slicer=[0, 3, 5]` will select data points with
             indices 0, 3, and 5.
-            3. If a python slice object is provided, will perform the selection
-            according to the slice. For example, `slicer=slice(0, None, 2)` will select
-            data points with indices 0, 2, 4,...
+            3. If a python slice object (or the serializable_slice) is provided,
+            will perform the selection according to the slice. For example,
+            `slicer=slice(0, None, 2)` will select data points with indices 0, 2, 4,...
             4. None is equivalent to `slice(None)`, i.e. select all data points.
 
     Returns:
@@ -34,9 +64,13 @@ def slice_sequence(
 
     if isinstance(slicer, int):
         indices = [slicer]
-    elif isinstance(slicer, slice):
+
+    elif isinstance(slicer, (slice, serializable_slice)):
+        if isinstance(slicer, serializable_slice):
+            slicer = slicer.to_slice()
         start, stop, step = slicer.indices(size)
         indices = list(range(start, stop, step))
+
     elif isinstance(slicer, (list, tuple)):
         indices = [i for i in slicer if i < size]
         if max(slicer) >= size:
@@ -45,8 +79,10 @@ def slice_sequence(
                 f"Frame indices {larger} provided in slicer larger than the "
                 f"number of total frames ({size}). They are ignored."
             )
+
     elif slicer is None:
         indices = list(range(size))
+
     else:
         supported = ("int", "list", "tuple", "slice", "None")
         raise RuntimeError(
