@@ -1,6 +1,12 @@
 import numpy as np
+from pymatgen.analysis.structure_analyzer import SpacegroupAnalyzer
 
-from potdata.transformations import PerturbTransformation, StrainTransformation
+from potdata.sampler import SliceSampler
+from potdata.transformations import (
+    M3gnetMDTransformation,
+    PerturbTransformation,
+    StrainTransformation,
+)
 
 
 def test_strain_transformation(Si_structure):
@@ -59,3 +65,22 @@ def test_perturb_transformation(Si_structure):
 
         assert np.max(distances) <= high
         assert np.min(distances) >= low
+
+
+def test_md_transformation(Si_structure):
+    # get a conventional cell
+    sga = SpacegroupAnalyzer(Si_structure)
+    structure = sga.get_conventional_standard_structure()
+
+    # increase number of cells
+    structure.make_supercell([2, 2, 2])
+
+    mt = M3gnetMDTransformation(
+        ensemble="nvt", steps=10, sampler=SliceSampler(slicer=slice(5, None, 2))
+    )
+    structures = mt.apply_transformation(structure)
+
+    assert len(structures) == 3
+    for s in structures:
+        assert len(s) == 64
+        assert s.lattice == structure.lattice
