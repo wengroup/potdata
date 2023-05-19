@@ -329,30 +329,14 @@ class M3gnetMDTransformation(BaseMDTransformation):
             trajectory="md.traj",
             logfile="md.log",
         )
-        md.run(steps=self.steps)
 
+        md.run(steps=self.steps)
         ase_traj = ASE_Trajectory("md.traj")
 
         adaptor = AseAtomsAdaptor()
+        structures = [adaptor.get_structure(frame) for frame in ase_traj]
 
-        structures = []
-        frame_properties = []
-        for frame in ase_traj:
-            struct = adaptor.get_structure(frame)
-            structures.append(struct)
-            frame_properties.append(
-                {
-                    "energy": frame.get_potential_energy(),
-                    "forces": frame.get_forces(),
-                    "stress": frame.get_stress(),
-                }
-            )
-
-        traj = Trajectory.from_structures(
-            structures,
-            constant_lattice=constant_lattice,
-            frame_properties=frame_properties,
-        )
+        traj = Trajectory.from_structures(structures, constant_lattice=constant_lattice)
 
         return traj
 
