@@ -610,7 +610,7 @@ class ACECollectionAdaptor(BaseDataCollectionAdaptor):
         # note, no stress is read
         def _get_dp(row):
             return DataPoint(
-                configuration=Configuration.from_ase(row["ase_atoms"]),
+                configuration=Configuration.from_ase_atoms(row["ase_atoms"]),
                 property=Property(energy=row["energy"], forces=row["forces"]),
             )
 
