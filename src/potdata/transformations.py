@@ -329,19 +329,35 @@ class M3gnetMDTransformation(BaseMDTransformation):
             trajectory="md.traj",
             logfile="md.log",
         )
-
         md.run(steps=self.steps)
 
         ase_traj = ASE_Trajectory("md.traj")
 
         adaptor = AseAtomsAdaptor()
-        structures = [adaptor.get_structure(ase_traj[i]) for i in range(len(ase_traj))]
-        traj = Trajectory.from_structures(structures, constant_lattice=constant_lattice)
+
+        structures = []
+        frame_properties = []
+        for frame in ase_traj:
+            struct = adaptor.get_structure(frame)
+            structures.append(struct)
+            frame_properties.append(
+                {
+                    "energy": frame.get_potential_energy(),
+                    "forces": frame.get_forces(),
+                    "stress": frame.get_stress(),
+                }
+            )
+
+        traj = Trajectory.from_structures(
+            structures,
+            constant_lattice=constant_lattice,
+            frame_properties=frame_properties,
+        )
 
         return traj
 
 
-# TODO this is obsolete, need adapting
+# TODO this is obsolete, need to be adapted
 # @dataclass
 # class CoherentStructureMaker(StructureComposeMaker):
 #     """
