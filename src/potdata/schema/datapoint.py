@@ -5,6 +5,7 @@ from typing import Union
 
 import numpy as np
 from ase import Atoms
+from ase.io import Trajectory
 from atomate2.vasp.schemas.calc_types.enums import TaskType
 from emmet.core.tasks import OutputDoc
 from emmet.core.vasp.calculation import IonicStep
@@ -13,6 +14,7 @@ from pymatgen.core.structure import Structure
 
 from potdata import __version__
 from potdata._typing import Matrix3D, Vector3D
+from potdata.sampler import BaseSampler
 from potdata.utils.suuid import suuid
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
@@ -72,7 +74,7 @@ class Configuration(BaseModel):
         pass
 
     @classmethod
-    def from_ase(cls, atoms: Atoms):
+    def from_ase_atoms(cls, atoms: Atoms):
         return cls(
             species=[str(s) for s in atoms.get_chemical_symbols()],
             coords=atoms.get_positions().tolist(),
@@ -229,6 +231,39 @@ class DataPoint(BaseModel):
             label=label,
         )
 
+    @classmethod
+    def from_ase_atoms(
+        cls,
+        atoms: Atoms,
+        weight: Weight = None,
+        job_uuid: str | None = None,
+        task_type: str | None = None,
+        frame: int = None,
+        label: str = None,
+    ):
+        """Get a data point from an ASE atoms object."""
+        config = Configuration.from_ase_atoms(atoms)
+
+        energy = atoms.get_potential_energy()
+        forces = atoms.get_forces().tolist()
+        stress = atoms.get_stress()
+        stress = [
+            [stress[0], stress[5], stress[4]],
+            [stress[5], stress[1], stress[3]],
+            [stress[4], stress[3], stress[2]],
+        ]
+
+        prop = Property(energy=energy, forces=forces, stress=stress)
+
+        return cls(
+            configuration=config,
+            property=prop,
+            weight=weight,
+            provenance=Provenance(job_uuid=job_uuid, task_type=task_type),
+            frame=frame,
+            label=label,
+        )
+
     def get_cohesive_energy(self, reference_energy: dict[str, float] = None) -> float:
         """Get the cohesive energy of the configuration.
 
@@ -266,8 +301,64 @@ class DataCollection(BaseModel):
         "free atom energies as the reference energies.",
     )
 
+    @classmethod
+    def from_ase_trajectory(
+        cls, trajectory: Trajectory, sampler: BaseSampler = None, **kwargs
+    ):
+        """
+        Get a data collection from an ASE trajectory.
+
+        Args:
+            trajectory: An ASE trajectory.
+            sampler: A sampler that can be used to sample the trajectory.
+            kwargs: Additional keyword arguments to be passed to the DataCollection.
+        """
+        if "data_points" in kwargs:
+            raise ValueError(
+                "`data_points` cannot be specified when creating from trajectory. It "
+                "will be automatically generated."
+            )
+
+        indices = list(range(len(trajectory)))
+        if sampler is not None:
+            indices = sampler.sample(indices)
+
+        data_points = [
+            DataPoint.from_ase_atoms(trajectory[i], frame=i) for i in indices
+        ]
+
+        return cls(data_points=data_points, **kwargs)
+
     def __len__(self):
         return len(self.data_points)
+
+    def __getitem__(self, item):
+        return self.data_points[item]
+
+    def __iter__(self):
+        return iter(self.data_points)
+
+    def __add__(self, other):
+        data_points = self.data_points + other.data_points
+        label = f"Combined from: `{self.label}` and `{other.label}`"
+
+        if other.reference_energy is not None:
+            if self.reference_energy is not None:
+                for k, v in other.reference_energy.items():
+                    if k in self.reference_energy and v != self.reference_energy[k]:
+                        raise ValueError(
+                            f"Reference energy for species `{k}` is different, get "
+                            f"{v} and {self.reference_energy[k]}."
+                        )
+                ref_e = self.reference_energy.copy().update(other.reference_energy)
+            else:
+                ref_e = other.reference_energy
+        else:
+            ref_e = self.reference_energy
+
+        return DataCollection(
+            data_points=data_points, label=label, reference_energy=ref_e
+        )
 
     def get_species(self) -> list[str]:
         """Get a list of species in the data collection."""
