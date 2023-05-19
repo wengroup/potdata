@@ -2,8 +2,6 @@
 such as extended xyz files, DeepMD format, and ACE format.
 """
 import copy
-import itertools
-import os
 import random
 from itertools import groupby
 from typing import Any
@@ -13,7 +11,6 @@ import ase.io
 import numpy as np
 import pandas as pd
 import ruamel.yaml
-from jobflow import Maker, job
 from monty.io import zopen
 from monty.json import MSONable
 from pymatgen.io.vasp import Vasprun
@@ -35,7 +32,7 @@ __all__ = [
     "YAMLCollectionAdaptor",
     "ACECollectionAdaptor",
     "MTPCollectionAdaptor",
-    "DeepMDCollectionAdaptorOld",
+    "DeepmdCollectionAdaptor",
 ]
 
 
@@ -925,185 +922,6 @@ class DeepmdCollectionAdaptor(BaseDataCollectionAdaptor):
             sets.append(datapoints[i : i + set_size])
 
         return sets
-
-
-class DeepMDCollectionAdaptorOld(BaseDataCollectionAdaptor):
-    def write(
-        self,
-        data: list[DataPoint],
-        path: PathLike,
-        *,
-        reference_energy: dict[str, float] = None,
-    ) -> list[PathLike]:
-        """
-        Write the data points to raw files, a set of raw files for each data point.
-
-        Args:
-            data: data points to write.
-            path: path to a directory to hold the files.
-            reference_energy: A dictionary of reference energies for each species.
-                In general, one would prefer to reference energy against the free atom
-                energies. If `None`, the reference energy is set to zero.
-        """
-
-        directory = create_directory(path)
-
-        dset_species: list[list[str]] = [dv.configuration.species for dv in data]
-        sorted_dset_species = sorted(dset_species, key=str)
-
-        # True/False of whether previous element in sorted list is the same as the
-        # current one
-        res = [
-            sub1 == sub2
-            for sub1, sub2 in zip(sorted_dset_species, sorted_dset_species[1:])
-        ]
-
-        species_set = sorted(set(itertools.chain.from_iterable(dset_species)))
-        enum_dict = {v: i for i, v in enumerate(species_set)}
-
-        filenames: list[PathLike] = []
-        counter = 0
-        conf = [dp.configuration for dp in data]
-        prop = [dp.property for dp in data]
-        for index, ent in enumerate(sorted_dset_species):
-            if index == 0:  # makes first directory
-                f = directory.joinpath(f"datapoint-{index:010d}")
-                os.mkdir(f)
-                write_deepmd_raws(
-                    f,
-                    data[index],
-                    conf[index],
-                    prop[index],
-                    ent,
-                    enum_dict,
-                    reference_energy,
-                )
-                filenames.append(f)
-
-            elif res[index - 1]:  # goes into previous directory and adds new lines
-                counter = counter + 1
-                f = directory.joinpath(f"datapoint-{index-counter:010d}")
-                write_deepmd_raws(
-                    f,
-                    data[index],
-                    conf[index],
-                    prop[index],
-                    ent,
-                    enum_dict,
-                    reference_energy,
-                )
-            else:
-                counter = 0
-                f = directory.joinpath(f"datapoint-{index:010d}")
-                os.mkdir(f)
-                write_deepmd_raws(
-                    f,
-                    data[index],
-                    conf[index],
-                    prop[index],
-                    ent,
-                    enum_dict,
-                    reference_energy,
-                )
-                filenames.append(f)
-
-        return filenames
-
-
-# TODO, add fitting data as input such that it becomes a connector?
-# TODO, this should be moved to somewhere else, a specific directory for
-class DataCollectionWriteMaker(Maker):
-    """Maker to wrap the write function of data collection as a jobflow job.
-
-    Args:
-        adaptor: the data collection adaptor to use to write the data points.
-        data: the data points to write.
-        path: path to a file to write the data points to or a directory to hold the
-            files. The exact behavior depends on the adaptor.
-        reference_energy: A dictionary of reference energies for each species.
-            In general, one would prefer to reference energy against the free atom
-            energies. If `None`, the reference energy is set to zero.
-    """
-
-    adaptor: BaseDataCollectionAdaptor
-    data: list[DataPoint]
-    path: PathLike
-    reference_energy: dict[str, float] = None
-    extra_kwargs: dict[str, Any] = None
-
-    @job
-    def make(self):
-        """
-        Write the data points to a file.
-
-        Returns: a list of path(s) to the file(s).
-        """
-
-        if self.extra_kwargs is None:
-            kwargs = {}
-        else:
-            kwargs = self.extra_kwargs
-
-        return self.adaptor.write(
-            self.data,
-            self.path,
-            reference_energy=self.reference_energy,
-            **kwargs,
-        )
-
-
-def write_deepmd_raws(
-    path: PathLike,
-    data: DataPoint,
-    data_conf: Configuration,
-    data_prop: Property,
-    data_species: list[str],
-    enum_dict,
-    reference_energy: dict[str, float] = None,
-):
-    """
-    Write configuration info to multiple files in raw file_format.
-
-    Args:
-        path: path name of the raw files directory
-        data_conf: datapoint configuration
-        data_prop: datapoint properties
-        data_species: species of atoms
-        enum_dict: enumeration dictionary for type_map and type
-        reference_energy: A dictionary of reference energies for each species.
-    """
-
-    def array_to_string(data):
-        d = np.asarray(data)
-        d = d.flatten()
-        s = ""
-        for i in d:
-            s += str(i) + " "
-        return s
-
-    filenames = [
-        os.path.join(path, "energy.raw"),
-        os.path.join(path, "force.raw"),
-        os.path.join(path, "coord.raw"),
-        os.path.join(path, "virial.raw"),
-        os.path.join(path, "box.raw"),
-    ]
-    np.savetxt(os.path.join(path, "type_map.raw"), data_species, fmt="%s")
-
-    np.savetxt(
-        os.path.join(path, "type.raw"), [enum_dict[n] for n in data_species], fmt="%d"
-    )
-    with open(filenames[0], "a") as fe, open(filenames[1], "a") as ff, open(
-        filenames[2], "a"
-    ) as fc, open(filenames[3], "a") as fv, open(filenames[4], "a") as fb:
-        fe.write(
-            array_to_string(data.get_cohesive_energy(reference_energy=reference_energy))
-            + "\n"
-        )
-        ff.write(array_to_string(data_prop.forces) + "\n")
-        fv.write(array_to_string(data_prop.stress) + "\n")
-        fc.write(array_to_string(data_conf.coords) + "\n")
-        fb.write(array_to_string(data_conf.cell) + "\n")
 
 
 def _parse_key_value(
