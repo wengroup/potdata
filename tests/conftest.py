@@ -4,11 +4,10 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from atomate2.vasp.schemas.task import TaskDocument
 from monty.serialization import loadfn
 from pymatgen.core import Structure
 
-from potdata.schema.datapoint import DataCollection, DataPoint
+from potdata.schema.datapoint import DataCollection
 
 
 @pytest.fixture(scope="session")
@@ -59,26 +58,10 @@ def tmp_dir(debug_mode):
 
 
 @pytest.fixture(scope="session")
-def relax_task_doc(test_data_dir) -> TaskDocument:
-    filename = test_data_dir / "schema" / "relax_task_doc.json.gz"
-    doc = loadfn(filename)
-
-    return doc
-
-
-@pytest.fixture(scope="session")
-def relax_fitting_data_points(relax_task_doc) -> list[DataPoint]:
-    datapoints = [
-        DataPoint.from_ionic_step(s)
-        for i, s in enumerate(relax_task_doc.calcs_reversed[0].output.ionic_steps)
-    ]
-
-    return datapoints
-
-
-@pytest.fixture(scope="session")
-def relax_fitting_data_collection(relax_fitting_data_points) -> DataCollection:
-    return DataCollection(data_points=relax_fitting_data_points)
+def fitting_data_collection(test_data_dir) -> DataCollection:
+    test_data_file = test_data_dir / "io" / "data_collection.json.gz"
+    dc = loadfn(test_data_file)
+    return dc
 
 
 @pytest.fixture(scope="session")

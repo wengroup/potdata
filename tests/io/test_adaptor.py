@@ -31,13 +31,13 @@ def test_vasprun_collection_adaptor(tmpdir, test_data_dir):
     assert len(datapoints) == 2
 
 
-def test_extxyz_adaptor(relax_fitting_data_points, tmpdir):
+def test_extxyz_adaptor(fitting_data_collection, tmpdir):
     with tmpdir.as_cwd():
         adaptor = ExtxyzAdaptor()
 
         filename = "config.xyz"
 
-        dp_write = relax_fitting_data_points[0]
+        dp_write = fitting_data_collection[0]
         adaptor.write(dp_write, filename, reference_energy=None)
 
         dp_read = adaptor.read(filename)
@@ -45,13 +45,13 @@ def test_extxyz_adaptor(relax_fitting_data_points, tmpdir):
         _compare_two_data_points(dp_write, dp_read)
 
 
-def test_extxyz_collection_adaptor(relax_fitting_data_collection, tmpdir):
+def test_extxyz_collection_adaptor(fitting_data_collection, tmpdir):
     with tmpdir.as_cwd():
         adaptor = ExtxyzCollectionAdaptor()
 
         path = "xyz_collection"
 
-        _ = adaptor.write(relax_fitting_data_collection, path, reference_energy=None)
+        _ = adaptor.write(fitting_data_collection, path, reference_energy=None)
 
         all_dp_read_by_name = {dp.label: dp for dp in adaptor.read(path).data_points}
 
@@ -64,33 +64,30 @@ def test_extxyz_collection_adaptor(relax_fitting_data_collection, tmpdir):
             all_dp_read_by_name[i] for i in sorted(all_dp_read_by_name.keys())
         ]
 
-        for dp_write, dp_read in zip(
-            relax_fitting_data_collection.data_points, all_dp_read
-        ):
+        for dp_write, dp_read in zip(fitting_data_collection.data_points, all_dp_read):
             _compare_two_data_points(dp_write, dp_read)
 
 
-def test_ace_collection_adaptor(relax_fitting_data_collection, tmpdir):
+def test_ace_collection_adaptor(fitting_data_collection, tmpdir):
     with tmpdir.as_cwd():
         adaptor = ACECollectionAdaptor()
         filename = "ace_data.pkl.gzip"
 
-        adaptor.write(relax_fitting_data_collection, filename, reference_energy=None)
+        adaptor.write(fitting_data_collection, filename, reference_energy=None)
         all_dp_read = adaptor.read(filename)
 
         for dp_write, dp_read in zip(
-            relax_fitting_data_collection.data_points, all_dp_read.data_points
+            fitting_data_collection.data_points, all_dp_read.data_points
         ):
             _compare_two_data_points(
                 dp_write,
                 dp_read,
-                fields_to_remove=("uuid", "provenance"),
+                # remove stress, because data points uses stress, ace uses virial
                 property_fields_to_remove=("stress",),
-                property_to_set_precision=dict(),
             )
 
 
-def test_mtp_collection_adaptor(relax_fitting_data_collection, tmpdir):
+def test_mtp_collection_adaptor(fitting_data_collection, tmpdir):
     adaptor = MTPCollectionAdaptor()
 
     coords = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]]
@@ -99,27 +96,32 @@ def test_mtp_collection_adaptor(relax_fitting_data_collection, tmpdir):
     # TODO, add more tests
     with tmpdir.as_cwd():
         filename = "mtp_data.cfg"
-        adaptor.write(relax_fitting_data_collection, filename, reference_energy=None)
+        adaptor.write(fitting_data_collection, filename, reference_energy=None)
 
 
 def _compare_two_data_points(
     dp1,
     dp2,
-    fields_to_remove=("provenance", "uuid"),
+    fields_to_remove=("provenance", "uuid", "frame", "label"),
+    config_to_set_precision={"coords": 8},
     property_fields_to_remove=(),
-    property_to_set_precision={"stress": 10},
+    property_to_set_precision={"energy": 8, "forces": 8, "stress": 8},
 ):
     # remove certain fields and set the precision of some fields for comparison
     dp1 = set_field_to_none(dp1, fields=fields_to_remove)
     dp2 = set_field_to_none(dp2, fields=fields_to_remove)
 
     for name in property_fields_to_remove:
-        dp1 = set_field_to_none(dp1.property, fields=[name])
-        dp2 = set_field_to_none(dp2.property, fields=[name])
+        dp1.property = set_field_to_none(dp1.property, fields=[name])
+        dp2.property = set_field_to_none(dp2.property, fields=[name])
+
+    for k, v in config_to_set_precision.items():
+        dp1.configuration = set_field_precision(dp1.configuration, fields=[k], digits=v)
+        dp2.configuration = set_field_precision(dp2.configuration, fields=[k], digits=v)
 
     # set the precision of some fields for comparison
     for k, v in property_to_set_precision.items():
-        dp1 = set_field_precision(dp1.property, fields=[k], digits=v)
-        dp2 = set_field_precision(dp2.property, fields=[k], digits=v)
+        dp1.property = set_field_precision(dp1.property, fields=[k], digits=v)
+        dp2.property = set_field_precision(dp2.property, fields=[k], digits=v)
 
     assert dp1 == dp2
