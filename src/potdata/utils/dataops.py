@@ -144,7 +144,7 @@ def remove_none_from_dict(d: dict[str, Any]) -> dict[str, Any]:
 
 def set_field_precision(obj, fields: list[str], digits: int = 10, new_obj: bool = True):
     """
-    Set given fields of an object to a certain precision.
+    Set given fields of an object to a certain precision in scientific notation.
 
     Args:
         obj: The object to change the precision.
@@ -153,9 +153,11 @@ def set_field_precision(obj, fields: list[str], digits: int = 10, new_obj: bool 
         new_obj: Whether to return a new object or modify the original object.
     """
 
+    fmt = "{" + f":.{digits}e" + "}"
+
     def _set_precision(x):
         if isinstance(x, float):
-            return round(x, digits)
+            return float(fmt.format(x))
         elif isinstance(x, Iterable):
             return [_set_precision(i) for i in x]
         else:
