@@ -52,7 +52,10 @@ def get_md_samples(structure):
 
 
 if __name__ == "__main__":
+    from monty.json import jsanitize
+
     dc_si = get_md_samples(get_si())
     dc_mgo = get_md_samples(get_mgo())
     dc = dc_si + dc_mgo
+    dc = jsanitize(dc, strict=True, enum_values=True)
     dumpfn(dc, Path("~/Desktop/data_collection.json.gz").expanduser())

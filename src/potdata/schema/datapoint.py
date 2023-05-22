@@ -15,7 +15,6 @@ from pymatgen.core.structure import Structure
 from potdata import __version__
 from potdata._typing import Matrix3D, Vector3D
 from potdata.sampler import BaseSampler
-from potdata.utils.suuid import suuid
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
 __all__ = ["Configuration", "Property", "Weight", "DataPoint", "DataCollection"]
@@ -151,7 +150,10 @@ class DataPoint(BaseModel):
 
     label: str = Field(None, description="A description of the data data point.")
 
-    uuid: str = Field(default_factory=suuid, description="A uuid for the data point.")
+    # TODO DataPoints is stored in the DB using a JobStore, then uuid should be assigned
+    # directly by the jobflow. See https://github.com/materialsproject/jobflow/blob/fb522a24cb695dc4cc20c72ae7e1ac77fc5ea7cf/src/jobflow/core/job.py#L601
+    # If we do not use JobStore, then we can use suuid to generate uuid.
+    # uuid: str = Field(default_factory=suuid, description="A uuid for the data point.")
 
     _schema: str = Field(
         __version__,
@@ -289,9 +291,9 @@ class DataCollection(BaseModel):
         description="A sequence of data points that constitutes the data collection. "
     )
 
-    uuid: str = Field(
-        default_factory=suuid, description="A uuid for the data collection."
-    )
+    # uuid: str = Field(
+    #     default_factory=suuid, description="A uuid for the data collection."
+    # )
 
     label: str = Field(None, description="A description of the data collection.")
 
