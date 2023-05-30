@@ -5,6 +5,6 @@ Potdata is a Python package for orchestrating data for developing interatomic po
 ## Installation
 
 ```shell
-git clone https://github.com/mjwen/potdata.git
+git clone https://github.com/wengroup/potdata.git
 pip install -e ./potdata
 ```
