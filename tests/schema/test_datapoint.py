@@ -36,12 +36,8 @@ def test_data_pint(Si_structure, Si_property, Si_weight):
 
     dp = DataPoint(configuration=conf, property=prop, weight=weight)
 
-    ref_cell = [
-        [3.348898, 0.0, 1.933487],
-        [1.116299, 3.157372, 1.933487],
-        [0.0, 0.0, 3.866975],
-    ]
-    ref_frac_coords = [[0.25, 0.25, 0.25], [0, 0, 0]]
+    ref_cell = [[0, 2.73, 2.73], [2.73, 0, 2.73], [2.73, 2.73, 0]]
+    ref_frac_coords = [[0, 0, 0], [0.25, 0.25, 0.25]]
     ref_cart_coords = np.dot(ref_frac_coords, ref_cell)
 
     conf = dp.configuration

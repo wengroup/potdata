@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 from monty.serialization import loadfn
 from pymatgen.core import Structure
@@ -66,14 +67,8 @@ def fitting_data_collection(test_data_dir) -> DataCollection:
 
 @pytest.fixture(scope="session")
 def Si_structure():
-    struct = Structure(
-        lattice=[
-            [3.348898, 0.0, 1.933487],
-            [1.116299, 3.157372, 1.933487],
-            [0.0, 0.0, 3.866975],
-        ],
+    return Structure(
+        lattice=np.array([[0, 2.73, 2.73], [2.73, 0, 2.73], [2.73, 2.73, 0]]),
         species=["Si", "Si"],
-        coords=[[0.25, 0.25, 0.25], [0, 0, 0]],
+        coords=[[0, 0, 0], [0.25, 0.25, 0.25]],
     )
-
-    return struct
