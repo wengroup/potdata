@@ -1,14 +1,11 @@
 import numpy as np
 import pytest
-from pymatgen.analysis.structure_analyzer import SpacegroupAnalyzer
 
-from potdata.sampler import SliceSampler
 from potdata.transformations import (
     M3gnetMDTransformation,
     PerturbTransformation,
     StrainTransformation,
 )
-from potdata.utils.dataops import serializable_slice
 
 try:
     import m3gnet
@@ -18,13 +15,17 @@ except ImportError:
 
 def test_strain_transformation(Si_structure):
     st = StrainTransformation(conventional=False)
+
+    # 4 volumetric strains
+    # 4 uni-axial strains
+    # 2 shear strains (for example, -0.1 and 0.1 are the same)
+    expected = 4 + 4 + 2
     transformed_structures = st.apply_transformation(Si_structure)
-    assert len(transformed_structures) == 7 * 4
+    assert len(transformed_structures) == expected
 
     st = StrainTransformation(conventional=True)
     transformed_structures = st.apply_transformation(Si_structure)
-    # only 2 for shear, because, for example, -0.1 and 0.1 are the same for shear
-    assert len(transformed_structures) == 10
+    assert len(transformed_structures) == expected
 
     for d in transformed_structures:
         assert "structure" in d
@@ -39,7 +40,8 @@ def test_strain_transformation(Si_structure):
 
     st = StrainTransformation(strain_magnitudes=strain_magnitudes)
     transformed_structures = st.apply_transformation(Si_structure)
-    assert len(transformed_structures) == 7 * len(strain_magnitudes)
+    # 2 for each of v volumetric, uni-axial, and shear strains
+    assert len(transformed_structures) == 2 + 2 + 2
 
     st = StrainTransformation(
         strain_states=strain_states, strain_magnitudes=strain_magnitudes
@@ -55,18 +57,18 @@ def test_perturb_transformation(Si_structure):
     pt = PerturbTransformation(num_structures=num_struct, low=low, high=high)
     transformed_structures = pt.apply_transformation(Si_structure)
 
-    for d in transformed_structures:
-        assert "structure" in d
-        assert "index" in d
+    assert len(transformed_structures) == num_struct
 
     # only select the atom whose initial position is not (0, 0, 0).
     # the (0, 0, 0) atom can be perturbed to the other side of the cell due to PBC.
-    orig_coords = Si_structure.cart_coords[[0]]
+    idx = 1
+    orig_coords = Si_structure.cart_coords[[idx]]
 
-    assert len(transformed_structures) == num_struct
     for d in transformed_structures:
+        assert "structure" in d
+        assert "index" in d
         s = d["structure"]
-        new_coords = s.cart_coords[[0]]
+        new_coords = s.cart_coords[[idx]]
 
         distances = np.linalg.norm(new_coords - orig_coords, axis=1)
 
@@ -75,25 +77,20 @@ def test_perturb_transformation(Si_structure):
 
 
 @pytest.mark.skipif(m3gnet is None, reason="m3gnet is not installed")
-def test_md_transformation(Si_structure, tmpdir):
-    # get a conventional cell
-    sga = SpacegroupAnalyzer(Si_structure)
-    structure = sga.get_conventional_standard_structure()
-
+def test_md_transformation(Si_conventional, tmpdir):
     # increase number of cells
-    structure.make_supercell([2, 2, 2])
+    Si_conventional.make_supercell([2, 2, 2])
 
     with tmpdir.as_cwd():
         mt = M3gnetMDTransformation(
             ensemble="nvt",
             temperature=300,
-            steps=10,
-            sampler=SliceSampler(slicer=serializable_slice(5, None, 2)),
+            steps=5,
         )
-        structures = mt.apply_transformation(structure)
+        structures = mt.apply_transformation(Si_conventional)
 
-    assert len(structures) == 3
+    assert len(structures) == 6
     for s in structures:
         s = s["structure"]
         assert len(s) == 64
-        assert s.lattice == structure.lattice
+        assert s.lattice == Si_conventional.lattice

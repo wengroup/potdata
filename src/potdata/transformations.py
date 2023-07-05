@@ -258,14 +258,14 @@ class BaseMDTransformation(AbstractTransformation):
         self.timestep = timestep
         self.steps = steps
 
-    def apply_transformation(self, structure: Structure) -> list[Structure]:
+    def apply_transformation(self, structure: Structure) -> list[dict]:
         """
         Returns:
             A list of structures from the trajectory.
         """
         structures = self.run_md(structure)
 
-        return structures
+        return [{"structure": s} for s in structures]
 
     @abc.abstractmethod
     def run_md(self, structure: Structure) -> list[Structure]:

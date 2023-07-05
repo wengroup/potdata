@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from monty.serialization import loadfn
+from pymatgen.analysis.structure_analyzer import SpacegroupAnalyzer
 from pymatgen.core import Structure
 
 from potdata.schema.datapoint import DataCollection
@@ -65,10 +66,17 @@ def fitting_data_collection(test_data_dir) -> DataCollection:
     return dc
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def Si_structure():
     return Structure(
         lattice=np.array([[0, 2.73, 2.73], [2.73, 0, 2.73], [2.73, 2.73, 0]]),
         species=["Si", "Si"],
         coords=[[0, 0, 0], [0.25, 0.25, 0.25]],
     )
+
+
+@pytest.fixture()
+def Si_conventional(Si_structure):
+    """Return a conventional cell of Si."""
+    sga = SpacegroupAnalyzer(Si_structure)
+    return sga.get_conventional_standard_structure()

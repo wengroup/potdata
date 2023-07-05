@@ -12,7 +12,7 @@ def test_transformation_chain(Si_structure):
     )
     transformed_structures = tc.apply_transformation(Si_structure)
 
-    assert len(transformed_structures) == 28 * num_perturb_struct
+    assert len(transformed_structures) == 10 * num_perturb_struct
 
     ts0 = transformed_structures[0]
     assert "structure" in ts0
