@@ -61,9 +61,6 @@ def test_data_pint(Si_structure, Si_property, Si_weight):
     assert np.allclose(weight.forces_weight, Si_weight["forces_weight"])
     assert np.allclose(weight.stress_weight, Si_weight["stress_weight"])
 
-    # check uuid is automatically created
-    assert isinstance(dp.uuid, str)
-
     assert dp.get_cohesive_energy(reference_energy={"Si": 0.1}) == 0.8
 
 
@@ -78,5 +75,5 @@ def test_data_collection(Si_structure, Si_property, Si_weight):
         data.append(dp)
 
     # data collection as a list of actual data points
-    dc1 = DataCollection(data_points=data)
-    assert isinstance(dc1.uuid, str)
+    dc = DataCollection(data_points=data)
+    assert len(dc) == len(data)

@@ -102,7 +102,7 @@ def test_mtp_collection_adaptor(fitting_data_collection, tmpdir):
 def _compare_two_data_points(
     dp1,
     dp2,
-    fields_to_remove=("provenance", "uuid", "frame", "label"),
+    fields_to_remove=("provenance", "label"),
     config_to_set_precision={"coords": 8},
     property_fields_to_remove=(),
     property_to_set_precision={"energy": 8, "forces": 8, "stress": 8},
