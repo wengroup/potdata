@@ -105,12 +105,11 @@ class StrainTransformation(AbstractTransformation):
         # remove zero strains
         strains = [s for s in strains if (np.abs(s) > 1e-10).any()]
 
-        deformations = [s.get_deformation_matrix() for s in strains]
+        # select symmetry reduced strains
         if self.sym_reduce:
-            deformation_mapping = symmetry_reduce(
-                deformations, structure, symprec=self.symprec
-            )
-            deformations = list(deformation_mapping.keys())
+            strain_mapping = symmetry_reduce(strains, structure, symprec=self.symprec)
+            strains = list(strain_mapping.keys())
+        deformations = [s.get_deformation_matrix() for s in strains]
 
         # strain the structure
         deformed_structures = []
