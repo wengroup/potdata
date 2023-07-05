@@ -20,6 +20,7 @@ from potdata.utils.units import kbar_to_eV_per_A_cube
 __all__ = ["Configuration", "Property", "Weight", "DataPoint", "DataCollection"]
 
 
+# TODO, need to come up with a better way of tracking the provenance of data
 class Provenance(BaseModel):
     """Provenance of the data point."""
 
@@ -29,8 +30,14 @@ class Provenance(BaseModel):
     )
     task_type: Union[TaskType, str] = Field(
         None,
-        description="atomate2 task type of the job that generated the data, "
-        "e.g. `Static`, `Structure Optimization`, and `MD`",
+        description="Task type of the job that generated the data, `Static`, "
+        "`Structure Optimization`, and `Molecular Dynamics`.",
+    )
+    frame: Union[None, int] = Field(
+        None,
+        description="From a relaxation or molecular dynamics trajectory, multiple "
+        "configurations can be extracted. This field can be used to give the frame of "
+        "the trajectory that the data point corresponds to.",
     )
 
 
@@ -67,10 +74,6 @@ class Configuration(BaseModel):
             cell=structure.lattice.matrix.tolist(),
             pbc=(True, True, True),
         )
-
-    @classmethod
-    def from_colabfit(cls):
-        pass
 
     @classmethod
     def from_ase_atoms(cls, atoms: Atoms):
@@ -139,18 +142,12 @@ class DataPoint(BaseModel):
 
     weight: Weight = Field(None, description="Weight for the configuration.")
 
-    provenance: Provenance = Field(None, description="Provenance of the data point.")
-
-    frame: Union[None, int] = Field(
-        None,
-        description="From a relaxation or molecular dynamics trajectory, multiple "
-        "configurations can be extracted. This field gives the frame of the trajectory "
-        "that the data point corresponds to.",
-    )
-
     label: str = Field(None, description="A description of the data data point.")
 
+    provenance: Provenance = Field(None, description="Provenance of the data point.")
+
     # TODO DataPoints is stored in the DB using a JobStore, then uuid should be assigned
+    # Anyways, UUID should be handled by Provenance
     # directly by the jobflow. See https://github.com/materialsproject/jobflow/blob/fb522a24cb695dc4cc20c72ae7e1ac77fc5ea7cf/src/jobflow/core/job.py#L601
     # If we do not use JobStore, then we can use suuid to generate uuid.
     # uuid: str = Field(default_factory=suuid, description="A uuid for the data point.")
@@ -194,9 +191,8 @@ class DataPoint(BaseModel):
             configuration=config,
             property=prop,
             weight=weight,
-            provenance=Provenance(job_uuid=job_uuid, task_type=task_type),
-            frame=None,
             label=label,
+            provenance=Provenance(job_uuid=job_uuid, task_type=task_type, frame=None),
         )
 
     @classmethod
@@ -228,9 +224,8 @@ class DataPoint(BaseModel):
             configuration=config,
             property=prop,
             weight=weight,
-            provenance=Provenance(job_uuid=job_uuid, task_type=task_type),
-            frame=frame,
             label=label,
+            provenance=Provenance(job_uuid=job_uuid, task_type=task_type, frame=frame),
         )
 
     @classmethod
@@ -261,9 +256,8 @@ class DataPoint(BaseModel):
             configuration=config,
             property=prop,
             weight=weight,
-            provenance=Provenance(job_uuid=job_uuid, task_type=task_type),
-            frame=frame,
             label=label,
+            provenance=Provenance(job_uuid=job_uuid, task_type=task_type, frame=frame),
         )
 
     def get_cohesive_energy(self, reference_energy: dict[str, float] = None) -> float:
