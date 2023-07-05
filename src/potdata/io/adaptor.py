@@ -177,7 +177,7 @@ class VasprunCollectionAdaptor(BaseDataCollectionAdaptor):
         """Read all vasprun.xml from a directory into a list of data points.
 
         Args:
-            path: List of paths to the vasprun.xml files.
+            path: Path to the vasprun.xml file or directory containing vasprun.xml.
             index: Index of the ionic step to read. Default to select the last ionic
                 step. See `VasprunAdaptor.read()` for more information.
             name_pattern: All files with `<name_pattern>` in the filename will be
@@ -186,10 +186,15 @@ class VasprunCollectionAdaptor(BaseDataCollectionAdaptor):
 
         adaptor = VasprunAdaptor()
 
+        path = to_path(path)
+        if path.is_file():
+            filenames = [path]
+        elif path.is_dir():
+            filenames = [p for p in path.rglob(f"*{name_pattern}*") if p.is_file()]
+
         datapoints = []
-        for p in to_path(path).rglob(f"*{name_pattern}*"):
-            if p.is_file():
-                datapoints.extend(adaptor.read(p, index=index))
+        for p in filenames:
+            datapoints.extend(adaptor.read(p, index=index))
 
         dc = DataCollection(data_points=datapoints)
 
@@ -426,7 +431,7 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
 
         path = to_path(path)
 
-        # read from a directory
+        # read from a directory, assuming one config per file
         if path.is_dir():
             datapoints = []
             for p in path.rglob("*" + extension):
@@ -435,7 +440,7 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
                     dp.label = p.as_posix()
                     datapoints.append(dp)
 
-        # read from a single file
+        # read from a single file; can consist of be multiple configs
         elif path.is_file():
             configs = self._separate_configs(path)
             datapoints = []

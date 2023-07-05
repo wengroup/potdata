@@ -37,6 +37,7 @@ ignore = ["E501"]
 
 # This duplicates the functionlity of ruff but it is nicer to have it for pycharm usage:
 # ruff will move cursor to the bottom, while isort will not.
+# Add src_paths so that import of the current package will be placed at the bottom.
 [tool.isort]
 src_paths = ["src", "tests"]
 
