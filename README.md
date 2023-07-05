@@ -1,6 +1,6 @@
 # potdata
 
-Potdata is a Python package for orchestrating data for developing interatomic potentials.
+Potdata is a Python package for orchestrating data in developing interatomic potentials.
 
 ## Installation
 

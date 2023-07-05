@@ -1,4 +1,4 @@
-"""Samplers to sample a subset of objects from sequence of objects."""
+"""Samplers to sample a subset of objects (e.g. configuration) from a sequence."""
 import abc
 from typing import Any, Iterable
 
@@ -14,19 +14,13 @@ class BaseSampler(MSONable):
     """Base class for data sampling."""
 
     @abc.abstractmethod
-    def sample(
-        self, data: Iterable, return_indices: bool = False
-    ) -> list[Any] | list[int]:
+    def sample(self, data: Iterable) -> list[Any]:
         """Run the sampler to sample a subset of the data.
 
         Args:
             data: data to sample from.
-            return_indices: If `True`, the returned value will be a list of indices
-                of the original data. If `False`, the returned value will be a list of
-                subset of the data.
-
         Returns:
-            A list of data or indices.
+            A list of sampled objects.
         """
 
     @property
@@ -41,7 +35,7 @@ class RandomSampler(BaseSampler):
     """Randomly sample a subset.
 
     Args:
-        size: number of data points to sample
+        size: number of data points to sample.
         seed: random seed for the sampler.
     """
 
@@ -51,9 +45,7 @@ class RandomSampler(BaseSampler):
         self._indices: list[int] = None
         np.random.seed(self.seed)
 
-    def sample(
-        self, data: Iterable, return_indices: bool = False
-    ) -> list[Any] | list[int]:
+    def sample(self, data: Iterable) -> list[Any]:
         data = [x for x in data]
 
         if self.size > len(data):
@@ -62,14 +54,12 @@ class RandomSampler(BaseSampler):
                 f"number f data points `{len(data)}`."
             )
 
-        self._indices = list(
-            np.random.randint(low=0, high=len(data), size=self.size).tolist()  # type: ignore
-        )
+        self._indices = [
+            i for i in np.random.randint(low=0, high=len(data), size=self.size)
+        ]
+        selected = [data[i] for i in self._indices]
 
-        if return_indices:
-            return self._indices  # ty
-        else:
-            return [data[i] for i in self._indices]
+        return selected
 
     @property
     def indices(self) -> list[int]:
@@ -87,20 +77,21 @@ class SliceSampler(BaseSampler):
             will select data points with indices 0, 2, 4,...).
     """
 
+    # TODO, can we not use serializable_slice? and directly use slice?
+    #   This depends on how we use it in potflow.
     def __init__(self, slicer: list[int] | serializable_slice):
         self.slicer = slicer
         self._indices: list[int] = None
 
-    def sample(
-        self, data: Iterable, return_indices: bool = False
-    ) -> list[Any] | list[int]:
+    def sample(self, data: Iterable) -> list[Any]:
         selected, self._indices = slice_sequence(data, self.slicer)
 
-        if return_indices:
-            return self._indices
-        else:
-            return selected
+        return selected
 
     @property
     def indices(self) -> list[int]:
         return self._indices
+
+
+class BaseConfigurationSampler(BaseSampler):
+    """Base sampler for atomic configuration."""
