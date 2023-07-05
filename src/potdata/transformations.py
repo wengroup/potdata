@@ -11,20 +11,19 @@ from monty.dev import requires
 from pymatgen.analysis.elasticity import Strain
 from pymatgen.core.structure import Structure
 from pymatgen.core.tensors import symmetry_reduce
-from pymatgen.core.trajectory import Trajectory
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.transformations.standard_transformations import (
     DeformStructureTransformation,
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
 
-from potdata.sampler import BaseSampler, SliceSampler
-from potdata.utils.dataops import serializable_slice
-
 try:
     import m3gnet
 except ImportError:
     m3gnet = None
+
+
+__all__ = ["StrainTransformation", "PerturbTransformation", "M3gnetMDTransformation"]
 
 
 class StrainTransformation(AbstractTransformation):
@@ -238,14 +237,13 @@ class PerturbTransformation(AbstractTransformation):
 
 class BaseMDTransformation(AbstractTransformation):
     """
-    Perform a molecular dynamics simulation and sample structures from the trajectory.
+    Perform a molecular dynamics simulation to get structures along the trajectory.
 
     Args:
         ensemble: ensemble for MD. Options are "nvt" and "npt".
         temperature: temperature for MD, in K.
         timestep: timestep for MD, in fs.
         steps: number of MD steps.
-        sampler: sampler to use to sample structures from the MD trajectory.
     """
 
     def __init__(
@@ -254,33 +252,23 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: float = 300,
         timestep: float = 1,
         steps: int = 1000,
-        sampler: BaseSampler = SliceSampler(serializable_slice(None)),
     ):
         self.ensemble = ensemble
         self.temperature = temperature
         self.timestep = timestep
         self.steps = steps
-        self.sampler = sampler
 
-    def apply_transformation(self, structure: Structure) -> list[dict]:
+    def apply_transformation(self, structure: Structure) -> list[Structure]:
         """
         Returns:
-            A list of dict: {'structure': structure, 'index': index}
-            where `index` specifies the frame of the structure in the trajectory.
+            A list of structures from the trajectory.
         """
-
-        trajectory = self.run_md(structure)
-        frame_indices = list(range(len(trajectory)))
-        selected = self.sampler.sample(frame_indices)
-
-        structures = [
-            {"structure": trajectory.get_structure(i), "index": i} for i in selected
-        ]
+        structures = self.run_md(structure)
 
         return structures
 
     @abc.abstractmethod
-    def run_md(self, structure: Structure) -> Trajectory:
+    def run_md(self, structure: Structure) -> list[Structure]:
         """
         Run a molecular dynamics simulation on a structure.
 
@@ -300,22 +288,25 @@ class BaseMDTransformation(AbstractTransformation):
 
 
 class M3gnetMDTransformation(BaseMDTransformation):
+    """Molecular dynamics transformation using m3gnet."""
+
     @requires(
         m3gnet,
         "`m3gnet` is needed for this transformation. To install it, see "
         "https://github.com/materialsvirtuallab/m3gnet",
     )
-    def run_md(self, structure: Structure) -> Trajectory:
-        from ase.io import Trajectory as ASE_Trajectory
+    def run_md(
+        self,
+        structure: Structure,
+        trajectory_filename: str = "md.traj",
+        log_filename: str = "md.log",
+    ) -> list[Structure]:
+        from ase.io import Trajectory as Trajectory
         from m3gnet.models import MolecularDynamics
         from pymatgen.io.ase import AseAtomsAdaptor
 
-        if "nvt" in self.ensemble.lower():
-            constant_lattice = True
-        elif "npt" in self.ensemble.lower():
-            constant_lattice = False
-        else:
-            supported = ["nvt", "npt"]
+        supported = ["nvt", "npt"]
+        if self.ensemble.lower() not in supported:
             raise ValueError(
                 f"Unknown ensemble: {self.ensemble}. Supported are {supported}."
             )
@@ -325,19 +316,17 @@ class M3gnetMDTransformation(BaseMDTransformation):
             ensemble=self.ensemble,
             temperature=self.temperature,
             timestep=self.timestep,
-            trajectory="md.traj",
-            logfile="md.log",
+            trajectory=trajectory_filename,
+            logfile=log_filename,
         )
 
         md.run(steps=self.steps)
-        ase_traj = ASE_Trajectory("md.traj")
+        ase_traj = Trajectory(trajectory_filename)
 
         adaptor = AseAtomsAdaptor()
         structures = [adaptor.get_structure(frame) for frame in ase_traj]
 
-        traj = Trajectory.from_structures(structures, constant_lattice=constant_lattice)
-
-        return traj
+        return structures
 
 
 # TODO this is obsolete, need to be adapted
