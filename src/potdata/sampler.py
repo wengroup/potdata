@@ -15,7 +15,7 @@ from ase.io import Trajectory
 from dscribe.descriptors import SOAP
 import random
 
-__all__ = ["RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
+__all__ = ["BaseSampler", "RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
 
 
 class BaseSampler(MSONable):
@@ -77,7 +77,7 @@ class RandomSampler(BaseSampler):
     def __init__(self, size: int, seed: int = 35):
         self.size = size
         self.seed = seed
-        self._indices: list[int] = None
+        self._indices: list[int] = []
         np.random.seed(self.seed)
 
     def sample(self, data: Iterable) -> list[Any]:
@@ -117,7 +117,7 @@ class SliceSampler(BaseSampler):
     #   This is difficult, because self.index need to be MSONable, but slice is not.
     def __init__(self, index: list[int] | serializable_slice):
         self.index = index
-        self._indices: list[int] = None
+        self._indices: list[int] = []
 
     def sample(self, data: Iterable) -> list[Any]:
         selected, self._indices = slice_sequence(data, self.index)
@@ -182,7 +182,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.reachable_ratio = reachable_ratio
         self.core_ratio = core_ratio
 
-        self._indices: list[int] = None
+        self._indices: list[int] = []
 
         np.random.seed(seed)
 
@@ -228,12 +228,24 @@ class DBSCANStructureSampler(BaseStructureSampler):
     def _dim_reduction(self, vectors: list[np.ndarray], dim: int):
         """Perform dimension reduction on the SOAP vectors."""
 
-        pca = PCA(n_components=dim)  # Set the desired number of components
-        reduced_vectors = pca.fit_transform(vectors)
+        # Reshape the SOAP vectors into a 2D array
+        soap_vectors_2d = soap_vectors.reshape(soap_vectors.shape[0], -1)
+
+        # Perform PCA dimension reduction
+        pca = PCA(n_components=2)  # Set the desired number of components
+        reduced_vectors = pca.fit_transform(soap_vectors_2d)
+        
         return reduced_vectors
 
     def _cluster(self, data: list[Structure]):
         """Perform DBSCAN."""
+        eps = self.db_kwargs.get('eps', 0.00019)
+        min_samples = self.db_kwargs.get('min_samples', 4)
+
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(data)
+        labels = db.labels_
+
+        return labels
 
     def sample(self, data: list[Structure]) -> list[Structure]:
         """"""
@@ -262,13 +274,108 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return selected
 
-    def plot(self):
+    def sample_points(self, reduced_vectors, eps=0.00019, min_samples=4, noisy_ratio=1, reachable_ratio=1, core_ratio=0.3):
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(reduced_vectors)
+        labels = db.labels_
+
+        core_samples_mask = np.zeros_like(labels, dtype=bool)
+        core_samples_mask[db.core_sample_indices_] = True
+
+        # Sample noisy points
+        noisy_points = reduced_vectors[labels == -1]
+        sample_size_noisy = int(noisy_ratio * len(noisy_points))
+        sampled_noisy_points = random.sample(list(noisy_points), sample_size_noisy)
+
+        # Sample reachable points
+        reachable_points = reduced_vectors[np.logical_and(labels != -1, ~core_samples_mask)]
+        sample_size_reachable = int(reachable_ratio * len(reachable_points))
+        sampled_reachable_points = random.sample(list(reachable_points), sample_size_reachable)
+
+        # Sample core points
+        core_points = reduced_vectors[core_samples_mask]
+        sample_size_core = int(core_ratio * len(core_points))
+        sampled_core_points = random.sample(list(core_points), sample_size_core)
+
+        return sampled_noisy_points, sampled_reachable_points, sampled_core_points, db
+    
+    def plot_clusters_with_sampling(self, eps=0.00019, min_samples=4, noisy_ratio=1, reachable_ratio=1, core_ratio=0.3):
+        
         """Function to plot the results of the selection.
 
         This can be called after the `sample` method to visualize the results.
         """
+        
+        soap_vectors = self._get_soap_vectors(data)
 
-    def _compute_core_ratio(self):
+        if self.post_soap_selection is not None:
+            soap_vectors = self.post_soap_selection(data, soap_vectors)
+
+        vectors = np.concatenate(soap_vectors, axis=1)
+
+        if self.pca_dim is not None:
+            vectors = self._dim_reduction(vectors, self.pca_dim)
+
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(vectors)
+        labels = db.labels_
+
+        core_samples_mask = np.zeros_like(labels, dtype=bool)
+        core_samples_mask[db.core_sample_indices_] = True
+
+        # Number of clusters in labels, ignoring noise if present.
+        n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+
+        unique_labels = set(labels)
+        colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+
+        # Plot noisy points and reachable points
+        noisy_points = vectors[labels == -1]
+        sampled_noisy_points = random.sample(list(noisy_points), int(noisy_ratio * len(noisy_points)))
+
+        reachable_points = vectors[np.logical_and(labels != -1, ~core_samples_mask)]
+        sampled_reachable_points = random.sample(list(reachable_points), int(reachable_ratio * len(reachable_points)))
+
+        plt.scatter(
+            [point[0] for point in sampled_noisy_points],
+            [point[1] for point in sampled_noisy_points],
+            color='black',
+            marker='o',
+            s=30,
+            label='Noisy Points'
+        )
+        plt.scatter(
+            [point[0] for point in sampled_reachable_points],
+            [point[1] for point in sampled_reachable_points],
+            color='gray',
+            marker='o',
+            s=30,
+            label='Reachable Points'
+        )
+
+        # Plot a sample of core points for each cluster
+        for k, col in zip(unique_labels, colors):
+            if k == -1:
+                continue  # Skip the noisy points
+
+            class_member_mask = labels == k
+            core_points = vectors[class_member_mask & core_samples_mask]
+            sampled_points = random.sample(list(core_points), int(core_ratio * len(core_points)))
+
+            plt.scatter(
+                [point[0] for point in sampled_points],
+                [point[1] for point in sampled_points],
+                color=tuple(col),
+                marker='o',
+                s=14,
+                label=f'Cluster {k} (Sampled)'
+            )
+
+        plt.title(f"Estimated number of clusters: {n_clusters_}")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.show()
+        
+        plot_clusters_with_sampling(soap_vectors)
+
+    def _compute_core_ratio(self, soap_vectors):
         """Compute the ratio of core data points to sample.
 
         ratio = min_samples/average_num_neighbors
@@ -295,6 +402,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return average_neighbors_of_core_points, ratio
         
-    average_neighbors_of_core_points, ratio = _compute_core_ratio(soap_vectors)
-    print("Average number of neighbors of core points:", average_neighbors_of_core_points)
-    print("Ratio:", ratio)
+        average_neighbors_of_core_points, ratio = _compute_core_ratio(soap_vectors)
+        print("Average number of neighbors of core points:", average_neighbors_of_core_points)
+        print("Ratio:", ratio)
