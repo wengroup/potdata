@@ -8,7 +8,7 @@ from pymatgen.core.structure import Structure
 
 from potdata.utils.dataops import serializable_slice, slice_sequence
 
-__all__ = ["RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
+__all__ = ["BaseSampler", "RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
 
 
 class BaseSampler(MSONable):
@@ -70,7 +70,7 @@ class RandomSampler(BaseSampler):
     def __init__(self, size: int, seed: int = 35):
         self.size = size
         self.seed = seed
-        self._indices: list[int] = None
+        self._indices: list[int] = []
         np.random.seed(self.seed)
 
     def sample(self, data: Iterable) -> list[Any]:
@@ -110,7 +110,7 @@ class SliceSampler(BaseSampler):
     #   This is difficult, because self.index need to be MSONable, but slice is not.
     def __init__(self, index: list[int] | serializable_slice):
         self.index = index
-        self._indices: list[int] = None
+        self._indices: list[int] = []
 
     def sample(self, data: Iterable) -> list[Any]:
         selected, self._indices = slice_sequence(data, self.index)
@@ -175,7 +175,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.reachable_ratio = reachable_ratio
         self.core_ratio = core_ratio
 
-        self._indices: list[int] = None
+        self._indices: list[int] = []
 
         np.random.seed(seed)
 

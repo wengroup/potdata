@@ -14,7 +14,7 @@ from pymatgen.core.structure import Structure
 
 from potdata import __version__
 from potdata._typing import Matrix3D, Vector3D
-from potdata.sampler import BaseSampler
+from potdata.samplers import BaseSampler
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
 __all__ = ["Configuration", "Property", "Weight", "DataPoint", "DataCollection"]
