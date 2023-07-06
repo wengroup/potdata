@@ -17,7 +17,7 @@ from pymatgen.transformations.standard_transformations import (
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
 
-from potdata.sampler import BaseSampler
+from potdata.samplers import BaseSampler
 
 try:
     import m3gnet

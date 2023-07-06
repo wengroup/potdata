@@ -23,9 +23,7 @@ def test_slice_sampler():
     data = list(range(10))
     sampled_data = sampler.sample(data)
 
-    assert len(sampled_data) == 3
     assert sampled_data == [2, 4, 6]
 
     sampled_indices = sampler.indices
-    assert len(sampled_indices) == 3
     assert sampled_indices == [2, 4, 6]
