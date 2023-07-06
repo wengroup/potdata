@@ -1,6 +1,6 @@
 """Samplers to select a subset of objects (e.g. structures) from a sequence."""
 import abc
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, List
 
 import numpy as np
 from monty.json import MSONable
@@ -160,7 +160,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
             points.
         seed: random seed for the sampling.
     """
-
+    
     def __init__(
         self,
         soap_kwargs: dict = None,
@@ -185,6 +185,55 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self._indices: list[int] = None
 
         np.random.seed(seed)
+
+    def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
+        """Convert structures to SOAP vectors.
+           Take Li atom in Li3YCl6 as an example."""
+        
+        # Set up the SOAP descriptor
+        soap_desc = SOAP(
+            species=["Li", "Y", "Cl"],
+            periodic=True, # Set periodicity to True for a periodic system
+            r_cut=5.0,
+            n_max=8,
+            l_max=6,
+            sigma=0.1
+        )
+
+        # Read the trajectory file
+        traj = Trajectory(traj_file)
+
+        Li_indices = [i for i, a in enumerate(traj[0]) if a.symbol == 'Li']
+
+        # Extract the relevant steps, select every 5th in the last 6000 steps
+        relevant_steps = traj[-6000::5]
+
+        # Compute the SOAP vectors for the selected Li atoms at each step
+        soap_vectors = [soap_desc.create(step) for step in relevant_steps]
+
+        # Extract the SOAP vectors for all Li atom at each step
+        soap_vectors_all = [vectors[Li_indices] for vectors in soap_vectors]
+
+        # Convert the SOAP vectors to a numpy array
+        soap_vectors_array = np.array(soap_vectors_all)
+
+        # Save the SOAP vectors to a file
+        np.save(save_file, soap_vectors_array)
+
+        # Load the SOAP vectors from the .npy file
+        soap_vectors = np.load(save_file)
+
+        return soap_vectors
+
+    def _dim_reduction(self, vectors: list[np.ndarray], dim: int):
+        """Perform dimension reduction on the SOAP vectors."""
+
+        pca = PCA(n_components=dim)  # Set the desired number of components
+        reduced_vectors = pca.fit_transform(vectors)
+        return reduced_vectors
+
+    def _cluster(self, data: list[Structure]):
+        """Perform DBSCAN."""
 
     def sample(self, data: list[Structure]) -> list[Structure]:
         """"""
@@ -219,22 +268,14 @@ class DBSCANStructureSampler(BaseStructureSampler):
         This can be called after the `sample` method to visualize the results.
         """
 
-    def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
-        """Convert structures to SOAP vectors."""
-
-    def _dim_reduction(self, vectors: list[np.ndarray], dim: int):
-        """Perform dimension reduction on the SOAP vectors."""
-
-    def _cluster(self, data: list[Structure]):
-        """Perform DBSCAN."""
-
     def _compute_core_ratio(self):
         """Compute the ratio of core data points to sample.
 
         ratio = min_samples/average_num_neighbors
         """
-        eps = self.db_kwargs.get('eps')
-        min_samples = self.db_kwargs.get('min_samples')
+        
+        eps = self.db_kwargs.get('eps', 0.00019)
+        min_samples = self.db_kwargs.get('min_samples', 4)
 
         db = DBSCAN(eps=eps, min_samples=min_samples).fit(soap_vectors)
         labels = db.labels_
