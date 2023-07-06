@@ -1,13 +1,7 @@
 import numpy as np
 import pytest
 
-from potdata.schema.datapoint import (
-    Configuration,
-    DataCollection,
-    DataPoint,
-    Property,
-    Weight,
-)
+from potdata.schema.datapoint import DataCollection, DataPoint, Property, Weight
 
 
 @pytest.fixture
@@ -29,22 +23,11 @@ def Si_weight():
     }
 
 
-def test_data_pint(Si_structure, Si_property, Si_weight):
-    conf = Configuration.from_pymatgen_structure(Si_structure)
+def test_data_point(Si_structure, Si_property, Si_weight):
     prop = Property(**Si_property)
     weight = Weight(**Si_weight)
 
-    dp = DataPoint(configuration=conf, property=prop, weight=weight)
-
-    ref_cell = [[0, 2.73, 2.73], [2.73, 0, 2.73], [2.73, 2.73, 0]]
-    ref_frac_coords = [[0, 0, 0], [0.25, 0.25, 0.25]]
-    ref_cart_coords = np.dot(ref_frac_coords, ref_cell)
-
-    conf = dp.configuration
-    assert np.allclose(conf.cell, ref_cell)
-    assert conf.pbc == (True, True, True)
-    assert conf.species == ["Si", "Si"]
-    assert np.allclose(conf.coords, ref_cart_coords)
+    dp = DataPoint(structure=Si_structure, property=prop, weight=weight)
 
     prop = dp.property
     assert prop.energy == Si_property["energy"]
@@ -61,13 +44,12 @@ def test_data_pint(Si_structure, Si_property, Si_weight):
 
 
 def test_data_collection(Si_structure, Si_property, Si_weight):
-    conf = Configuration.from_pymatgen_structure(Si_structure)
     prop = Property(**Si_property)
     weight = Weight(**Si_weight)
 
     data = []
     for _ in range(2):
-        dp = DataPoint(configuration=conf, property=prop, weight=weight)
+        dp = DataPoint(structure=Si_structure, property=prop, weight=weight)
         data.append(dp)
 
     # data collection as a list of actual data points
