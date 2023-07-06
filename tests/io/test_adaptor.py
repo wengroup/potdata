@@ -1,3 +1,5 @@
+import numpy as np
+
 from potdata.io.adaptor import (
     ACECollectionAdaptor,
     ExtxyzAdaptor,
@@ -103,7 +105,6 @@ def _compare_two_data_points(
     dp1,
     dp2,
     fields_to_remove=("provenance", "label"),
-    config_to_set_precision={"coords": 8},
     property_fields_to_remove=(),
     property_to_set_precision={"energy": 8, "forces": 8, "stress": 8},
 ):
@@ -115,13 +116,20 @@ def _compare_two_data_points(
         dp1.property = set_field_to_none(dp1.property, fields=[name])
         dp2.property = set_field_to_none(dp2.property, fields=[name])
 
-    for k, v in config_to_set_precision.items():
-        dp1.configuration = set_field_precision(dp1.configuration, fields=[k], digits=v)
-        dp2.configuration = set_field_precision(dp2.configuration, fields=[k], digits=v)
-
     # set the precision of some fields for comparison
     for k, v in property_to_set_precision.items():
         dp1.property = set_field_precision(dp1.property, fields=[k], digits=v)
         dp2.property = set_field_precision(dp2.property, fields=[k], digits=v)
+
+    # deal with structure, it cannot be set easily
+    s1 = dp1.structure
+    s2 = dp2.structure
+    assert np.allclose(s1.lattice.matrix, s2.lattice.matrix)
+    assert np.allclose(s1.cart_coords, s2.cart_coords)
+    assert s1.pbc == s2.pbc
+    assert s1.species == s2.species
+
+    dp1.structure = None
+    dp2.structure = None
 
     assert dp1 == dp2

@@ -5,6 +5,7 @@ import os
 import tempfile
 from pathlib import Path
 
+import numpy as np
 from monty.serialization import dumpfn
 from pymatgen.core import Structure
 
@@ -13,19 +14,15 @@ from potdata.schema.datapoint import DataCollection
 
 def get_si():
     return Structure(
-        lattice=[
-            [3.348898, 0.0, 1.933487],
-            [1.116299, 3.157372, 1.933487],
-            [0.0, 0.0, 3.866975],
-        ],
+        lattice=np.asarray([[0, 2.13, 2.13], [2.13, 0, 2.13], [2.13, 2.13, 0]]),
         species=["Si", "Si"],
-        coords=[[0.25, 0.25, 0.25], [0, 0, 0]],
+        coords=[[0, 0, 0], [0.25, 0.25, 0.25]],
     )
 
 
 def get_mgo():
     return Structure(
-        lattice=[[0, 2.13, 2.13], [2.13, 0, 2.13], [2.13, 2.13, 0]],
+        lattice=np.asarray([[0, 2.13, 2.13], [2.13, 0, 2.13], [2.13, 2.13, 0]]),
         species=["Mg", "O"],
         coords=[[0, 0, 0], [0.5, 0.5, 0.5]],
     )

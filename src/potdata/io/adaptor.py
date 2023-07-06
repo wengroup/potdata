@@ -13,11 +13,13 @@ import pandas as pd
 import ruamel.yaml
 from monty.io import zopen
 from monty.json import MSONable
+from pymatgen.core import Lattice, Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp import Vasprun
 from scipy.spatial import distance_matrix
 
 from potdata._typing import Matrix3D, PathLike, Vector3D
-from potdata.schema.datapoint import Configuration, DataCollection, DataPoint, Property
+from potdata.schema.datapoint import DataCollection, DataPoint, Property
 from potdata.utils.dataops import remove_none_from_dict, slice_sequence
 from potdata.utils.path import create_directory, to_path
 from potdata.utils.units import kbar_to_eV_per_A_cube
@@ -155,7 +157,7 @@ class VasprunAdaptor(BaseDataPointAdaptor):
         datapoints = []
         for step in ionic_steps:
             dp = DataPoint(
-                configuration=Configuration.from_pymatgen_structure(step["structure"]),
+                structure=step["structure"],
                 property=Property(
                     forces=step["forces"],
                     stress=(ratio * np.asarray(step["stress"])).tolist(),
@@ -225,14 +227,14 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         reference_energy: dict[str, float] = None,
         mode: str = "w",
     ):
-        conf = datapoint.configuration
+        structure = datapoint.structure
         prop = datapoint.property
 
         s = self.to_string(
-            cell=conf.cell,
-            species=conf.species,
-            coords=conf.coords,
-            pbc=conf.pbc,
+            cell=structure.lattice.matrix,
+            species=[s.symbol for s in structure.species],
+            coords=structure.cart_coords,
+            pbc=structure.pbc,
             energy=datapoint.get_cohesive_energy(reference_energy=reference_energy),
             forces=prop.forces,
             stress=prop.stress,
@@ -261,16 +263,18 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         cell = np.reshape(cell, (3, 3)).tolist()
 
         # PBC
-        PBC_str = _parse_key_value(line1, "PBC", "str", 3, path)
+        pbc_str = _parse_key_value(line1, "PBC", "str", 3, path)
         try:
-            PBC = [int(s) for s in PBC_str]
+            # `1` or `0`?
+            pbc = [int(s) for s in pbc_str]
+            pbc = [bool(i) for i in pbc]
         except ValueError:
             # `T` or `F`?
-            PBC_str = [s.lower() for s in PBC_str]
-            if not all([s in ["t", "f"] for s in PBC_str]):
+            pbc_str = [s.lower() for s in pbc_str]
+            if not all([s in ["t", "f"] for s in pbc_str]):
                 raise ValueError('PBC must be "T" or "F", or "1" or "0".')
             else:
-                PBC = [1 if s == "t" else 0 for s in PBC_str]
+                pbc = [True if s == "t" else False for s in pbc_str]
 
         # energy is optional
         try:
@@ -332,9 +336,14 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         if not has_forces:
             forces = None
 
-        conf = Configuration(species=species, coords=coords, cell=cell, pbc=PBC)
+        structure = Structure(
+            lattice=Lattice(cell, pbc),
+            species=species,
+            coords=coords,
+            coords_are_cartesian=True,
+        )
         prop = Property(energy=energy, forces=forces, stress=stress)
-        datapoint = DataPoint(configuration=conf, property=prop)
+        datapoint = DataPoint(structure=structure, property=prop)
 
         return datapoint
 
@@ -612,7 +621,7 @@ class ACECollectionAdaptor(BaseDataCollectionAdaptor):
         # note, no stress is read
         def _get_dp(row):
             return DataPoint(
-                configuration=Configuration.from_ase_atoms(row["ase_atoms"]),
+                structure=AseAtomsAdaptor.get_structure(row["ase_atoms"]),
                 property=Property(energy=row["energy"], forces=row["forces"]),
             )
 
@@ -651,13 +660,7 @@ class ACECollectionAdaptor(BaseDataCollectionAdaptor):
                 "energy": [dp.property.energy for dp in datapoints],
                 "forces": [dp.property.forces for dp in datapoints],
                 "ase_atoms": [
-                    ase.Atoms(
-                        symbols=dp.configuration.species,
-                        positions=dp.configuration.coords,
-                        cell=dp.configuration.cell,
-                        pbc=dp.configuration.pbc,
-                    )
-                    for dp in datapoints
+                    AseAtomsAdaptor.get_atoms(dp.structure) for dp in datapoints
                 ],
                 "energy_corrected": [
                     dp.get_cohesive_energy(reference_energy=reference_energy)
@@ -725,7 +728,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         Returns:
             A configuration in MTP cfg format as a string.
         """
-        coords = dp.configuration.coords
+        coords = dp.structure.cart_coords
         size = len(coords)
         energy = dp.get_cohesive_energy(reference_energy=reference_energy)
         min_dist = self._get_min_dist(coords)
@@ -735,7 +738,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"{size:>5}\n"
 
         s += " Supercell\n"
-        cell = dp.configuration.cell
+        cell = dp.structure.lattice.matrix
         for line in cell:
             for item in line:
                 s += f" {item:>15.6f}"
@@ -756,19 +759,19 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         )
 
         for i, (sp, co, fo) in enumerate(
-            zip(dp.configuration.species, coords, dp.property.forces)
+            zip(dp.structure.species, coords, dp.property.forces)
         ):
             fmt = (
                 "{:>19d}{:>14d}{:>14.6f}{:>14.6f}{:>14.6f}{:>14.6f}{:>14.6f}{:>14.6f}\n"
             )
-            s += fmt.format(i + 1, species_map[sp], *co, *fo)
+            s += fmt.format(i + 1, species_map[sp.symbol], *co, *fo)
 
         # energy
         s += " Energy\n"
         s += f"     {energy:.12f}\n"
 
         # stress
-        vs = stress_to_virial(dp.property.stress, dp.configuration.cell, sign=-1)
+        vs = stress_to_virial(dp.property.stress, dp.structure.lattice.matrix, sign=-1)
         fmt = "{:>16s}{:>12s}{:>12s}{:>12s}{:>12s}{:>12s}\n"
         s += fmt.format("PlusStress:  xx", "yy", "zz", "yz", "xz", "xy")
 
@@ -850,7 +853,7 @@ class DeepmdCollectionAdaptor(BaseDataCollectionAdaptor):
                     f.write(f"{s}\n")
 
             # write type.raw
-            species_type = [species_to_int[s] for s in stm[0].configuration.species]
+            species_type = [species_to_int[str(s)] for s in stm[0].structure.species]
             with open(stm_dir / "type.raw", "w") as f:
                 for t in species_type:
                     f.write(f"{t}\n")
@@ -866,11 +869,11 @@ class DeepmdCollectionAdaptor(BaseDataCollectionAdaptor):
                 virial = []
                 for dp in current_set:
                     v = stress_to_virial(
-                        dp.property.stress, dp.configuration.cell, sign=-1
+                        dp.property.stress, dp.structure.lattice.matrix, sign=-1
                     )
 
-                    box.append(np.ravel(dp.configuration.cell))
-                    coord.append(np.ravel(dp.configuration.coords))
+                    box.append(np.ravel(dp.structure.lattice.matrix))
+                    coord.append(np.ravel(dp.structure.cart_coords))
                     energy.append(dp.get_cohesive_energy(reference_energy))
                     force.append(np.ravel(dp.property.forces))
                     virial.append(np.ravel(v))
@@ -897,7 +900,7 @@ class DeepmdCollectionAdaptor(BaseDataCollectionAdaptor):
         """
 
         def species_string(d: DataPoint):
-            return "-".join(d.configuration.species)
+            return "-".join([s.symbol for s in d.structure.species])
 
         sorted_data_points = sorted(data.data_points, key=species_string)
         groups = [list(g) for _, g in groupby(sorted_data_points, key=species_string)]
