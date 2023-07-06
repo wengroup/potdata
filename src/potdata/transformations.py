@@ -335,8 +335,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
         md.run(steps=self.steps)
         ase_traj = Trajectory(trajectory_filename)
 
-        adaptor = AseAtomsAdaptor()
-        structures = [adaptor.get_structure(frame) for frame in ase_traj]
+        structures = [AseAtomsAdaptor.get_structure(frame) for frame in ase_traj]
 
         return structures
 

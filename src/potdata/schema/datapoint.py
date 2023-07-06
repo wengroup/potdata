@@ -11,13 +11,14 @@ from emmet.core.tasks import OutputDoc
 from emmet.core.vasp.calculation import IonicStep
 from pydantic import BaseModel, Field
 from pymatgen.core.structure import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 
 from potdata import __version__
 from potdata._typing import Matrix3D, Vector3D
 from potdata.samplers import BaseSampler
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
-__all__ = ["Configuration", "Property", "Weight", "DataPoint", "DataCollection"]
+__all__ = ["Property", "Weight", "DataPoint", "DataCollection"]
 
 
 # TODO, need to come up with a better way of tracking the provenance of data
@@ -39,55 +40,6 @@ class Provenance(BaseModel):
         "configurations can be extracted. This field can be used to give the frame of "
         "the trajectory that the data point corresponds to.",
     )
-
-
-class Configuration(BaseModel):
-    """An atomic configuration."""
-
-    species: list[str] = Field(
-        description="Species of the atoms, typically their atomic symbols, e.g. "
-        "['Si', 'Si']",
-    )
-
-    coords: list[Vector3D] = Field(
-        description="Cartesian coordinates of the atoms. Shape (N, 3), where N is the "
-        "number of atoms in the configuration. Example Units: A."
-    )
-
-    cell: Matrix3D = Field(
-        None,
-        description="Cell vectors a_1, a_2, and a_3 of the simulation box. If `None`, "
-        "this is a cluster without cell (typical for a molecule). Example units: A.",
-    )
-
-    pbc: Union[tuple[bool, bool, bool], tuple[int, int, int]] = Field(
-        (True, True, True),
-        description="Periodic boundary conditions along the three cell vectors a_1, "
-        "a_2, and a_3.",
-    )
-
-    @classmethod
-    def from_pymatgen_structure(cls, structure: Structure):
-        return cls(
-            species=[str(s) for s in structure.species],
-            coords=structure.cart_coords.tolist(),
-            cell=structure.lattice.matrix.tolist(),
-            pbc=(True, True, True),
-        )
-
-    @classmethod
-    def from_ase_atoms(cls, atoms: Atoms):
-        return cls(
-            species=[str(s) for s in atoms.get_chemical_symbols()],
-            coords=atoms.get_positions().tolist(),
-            cell=atoms.get_cell().tolist(),
-            pbc=atoms.get_pbc().tolist(),
-        )
-
-    @property
-    def composition_dict(self) -> dict[str, int]:
-        """Get the composition of the configuration as a dictionary."""
-        return {s: self.species.count(s) for s in set(self.species)}
 
 
 class Property(BaseModel):
@@ -134,7 +86,7 @@ class Weight(BaseModel):
 class DataPoint(BaseModel):
     """A data point of a pair of configuration and the property associated with it."""
 
-    configuration: Configuration = Field(description="An atomic configuration.")
+    structure: Structure = Field(description="An atomic configuration.")
 
     property: Property = Field(
         description="Properties associated with the configuration."
@@ -173,8 +125,6 @@ class DataPoint(BaseModel):
         For relaxation and molecular dynamics job, this corresponds to the last ionic
         step.
         """
-        config = Configuration.from_pymatgen_structure(output.structure)
-
         # units conversion from kbar to eV/A^3
         # VASP uses compression as the positive direction for stress, opposite to the
         # convention. Therefore, the sign is flipped with the minus sign.
@@ -188,7 +138,7 @@ class DataPoint(BaseModel):
         )
 
         return cls(
-            configuration=config,
+            structure=output.structure,
             property=prop,
             weight=weight,
             label=label,
@@ -206,7 +156,6 @@ class DataPoint(BaseModel):
         label: str = None,
     ):
         """Get a data point from :obj:`atomate2.vasp.schemas.calculation.IonicStep`."""
-        config = Configuration.from_pymatgen_structure(ionic_step.structure)
 
         # units conversion from kbar to eV/A^3
         # VASP uses compression as the positive direction for stress, opposite to the
@@ -221,7 +170,7 @@ class DataPoint(BaseModel):
         )
 
         return cls(
-            configuration=config,
+            structure=ionic_step.structure,
             property=prop,
             weight=weight,
             label=label,
@@ -239,7 +188,7 @@ class DataPoint(BaseModel):
         label: str = None,
     ):
         """Get a data point from an ASE atoms object."""
-        config = Configuration.from_ase_atoms(atoms)
+        structure = AseAtomsAdaptor.get_structure(atoms)
 
         energy = atoms.get_potential_energy()
         forces = atoms.get_forces().tolist()
@@ -253,7 +202,7 @@ class DataPoint(BaseModel):
         prop = Property(energy=energy, forces=forces, stress=stress)
 
         return cls(
-            configuration=config,
+            structure=structure,
             property=prop,
             weight=weight,
             label=label,
@@ -272,8 +221,8 @@ class DataPoint(BaseModel):
             coh_e = self.property.energy
         else:
             coh_e = self.property.energy
-            for s, count in self.configuration.composition_dict.items():
-                coh_e -= count * reference_energy[s]
+            for s, count in self.structure.composition.items():
+                coh_e -= count * reference_energy[s.symbol]
 
         return coh_e
 
@@ -360,7 +309,7 @@ class DataCollection(BaseModel):
         """Get a list of species in the data collection."""
         species_set = set()
         for dp in self.data_points:
-            species_set.update(dp.configuration.species)
+            species_set.update(dp.structure.symbol_set)
 
         return sorted(species_set)
 
