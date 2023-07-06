@@ -234,7 +234,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         # Perform PCA dimension reduction
         pca = PCA(n_components=2)  # Set the desired number of components
         reduced_vectors = pca.fit_transform(soap_vectors_2d)
-        
+         
         return reduced_vectors
 
     def _cluster(self, data: list[Structure]):
