@@ -8,6 +8,13 @@ from pymatgen.core.structure import Structure
 
 from potdata.utils.dataops import serializable_slice, slice_sequence
 
+from sklearn.decomposition import PCA
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+from ase.io import Trajectory
+from dscribe.descriptors import SOAP
+import random
+
 __all__ = ["RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
 
 
@@ -226,3 +233,27 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         ratio = min_samples/average_num_neighbors
         """
+        eps = self.db_kwargs.get('eps')
+        min_samples = self.db_kwargs.get('min_samples')
+
+        db = DBSCAN(eps=eps, min_samples=min_samples).fit(soap_vectors)
+        labels = db.labels_
+
+        core_samples_mask = np.zeros_like(labels, dtype=bool)
+        core_samples_mask[db.core_sample_indices_] = True
+        core_points = soap_vectors[core_samples_mask]
+
+        # Compute the average number of neighbors for all core points
+        neighbors_model = NearestNeighbors(radius=db.eps)
+        neighbors_model.fit(core_points)
+        neighborhoods = neighbors_model.radius_neighbors(core_points, return_distance=False)
+        average_neighbors_of_core_points = np.mean([len(neighbors) for neighbors in neighborhoods])
+
+        # Calculate the ratio
+        ratio = min_samples / average_neighbors_of_core_points
+
+        return average_neighbors_of_core_points, ratio
+        
+    average_neighbors_of_core_points, ratio = _compute_core_ratio(soap_vectors)
+    print("Average number of neighbors of core points:", average_neighbors_of_core_points)
+    print("Ratio:", ratio)
