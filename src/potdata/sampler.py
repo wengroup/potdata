@@ -14,6 +14,7 @@ from sklearn.neighbors import NearestNeighbors
 from ase.io import Trajectory
 from dscribe.descriptors import SOAP
 import random
+from pymatgen.io.ase import AseAtomsAdaptor
 
 __all__ = ["BaseSampler", "RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
 
@@ -187,12 +188,11 @@ class DBSCANStructureSampler(BaseStructureSampler):
         np.random.seed(seed)
 
     def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
-        """Convert structures to SOAP vectors.
-           Take Li atom in Li3YCl6 as an example."""
+        """Convert structures to SOAP vectors."""
         
         # Set up the SOAP descriptor
         soap_desc = SOAP(
-            species=["Li", "Y", "Cl"],
+            species=["Element_1", "Element_2", "Element_3"],
             periodic=True, # Set periodicity to True for a periodic system
             r_cut=5.0,
             n_max=8,
@@ -200,25 +200,44 @@ class DBSCANStructureSampler(BaseStructureSampler):
             sigma=0.1
         )
 
+        soap_vectors_all = []
+        
         # Read the trajectory file
+        traj_file = "path/to/md.traj"
         traj = Trajectory(traj_file)
 
-        Li_indices = [i for i, a in enumerate(traj[0]) if a.symbol == 'Li']
+        for structure in data:
+            # Convert pymatgen Structure to ASE Atoms
+            atoms = AseAtomsAdaptor.get_atoms(structure)
 
-        # Extract the relevant steps, select every 5th in the last 6000 steps
-        relevant_steps = traj[-6000::5]
+            # Compute the SOAP vector for the current structure
+            soap_vector = soap_desc.create(atoms)
 
-        # Compute the SOAP vectors for the selected Li atoms at each step
-        soap_vectors = [soap_desc.create(step) for step in relevant_steps]
+            soap_vectors_all.append(soap_vector)
 
-        # Extract the SOAP vectors for all Li atom at each step
-        soap_vectors_all = [vectors[Li_indices] for vectors in soap_vectors]
+        return soap_vectors_all
+
+    def _get_specific_element_soap_vectors(self, data: list[Structure], target_element: str, start_index: int, end_index: int, step_size: int) -> np.ndarray:
+        """Convert structures to SOAP vectors for specific atoms."""
+
+        # Select specific atom indices by element
+        selected_atom_indices = [i for i, atom in enumerate(traj[0]) if atom.symbol == target_element]
+
+        # Extract the relevant steps
+        relevant_steps = traj[start_index:end_index:step_size]
+
+        # Compute the SOAP vectors for the selected atoms at each step
+        soap_vectors_selected_atoms = [soap_desc.create(step) for step in relevant_steps]
+
+        # Extract the SOAP vectors for all selected atoms at each step
+        soap_vectors_all_selected = [vectors[selected_atom_indices] for vectors in soap_vectors_selected_atoms]
 
         # Convert the SOAP vectors to a numpy array
-        soap_vectors_array = np.array(soap_vectors_all)
+        soap_vectors_array = np.array(soap_vectors_all_selected)
 
         # Save the SOAP vectors to a file
         np.save(save_file, soap_vectors_array)
+        save_file = "path/to/soap_vectors.npy"
 
         # Load the SOAP vectors from the .npy file
         soap_vectors = np.load(save_file)
@@ -228,19 +247,19 @@ class DBSCANStructureSampler(BaseStructureSampler):
     def _dim_reduction(self, vectors: list[np.ndarray], dim: int):
         """Perform dimension reduction on the SOAP vectors."""
 
-        # Reshape the SOAP vectors into a 2D array
-        soap_vectors_2d = soap_vectors.reshape(soap_vectors.shape[0], -1)
+        # Reshape the SOAP vectors into a n-dimensional array
+        soap_vectors_dim = soap_vectors.reshape(soap_vectors.shape[0], -1)
 
         # Perform PCA dimension reduction
-        pca = PCA(n_components=2)  # Set the desired number of components
-        reduced_vectors = pca.fit_transform(soap_vectors_2d)
+        pca = PCA(n_components=dim)  # Set the desired number of components
+        reduced_vectors = pca.fit_transform(soap_vectors_dim)
          
         return reduced_vectors
 
     def _cluster(self, data: list[Structure]):
         """Perform DBSCAN."""
-        eps = self.db_kwargs.get('eps', 0.00019)
-        min_samples = self.db_kwargs.get('min_samples', 4)
+        eps = self.db_kwargs.get('eps')
+        min_samples = self.db_kwargs.get('min_samples')
 
         db = DBSCAN(eps=eps, min_samples=min_samples).fit(data)
         labels = db.labels_
@@ -274,7 +293,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return selected
 
-    def sample_points(self, reduced_vectors, eps=0.00019, min_samples=4, noisy_ratio=1, reachable_ratio=1, core_ratio=0.3):
+    def sample_points(self, reduced_vectors, eps, min_samples, noisy_ratio, reachable_ratio, core_ratio):
         db = DBSCAN(eps=eps, min_samples=min_samples).fit(reduced_vectors)
         labels = db.labels_
 
@@ -298,7 +317,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return sampled_noisy_points, sampled_reachable_points, sampled_core_points, db
     
-    def plot_clusters_with_sampling(self, eps=0.00019, min_samples=4, noisy_ratio=1, reachable_ratio=1, core_ratio=0.3):
+    def plot_clusters_with_sampling(self, eps, min_samples, noisy_ratio, reachable_ratio, core_ratio):
         
         """Function to plot the results of the selection.
 
@@ -315,11 +334,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         if self.pca_dim is not None:
             vectors = self._dim_reduction(vectors, self.pca_dim)
 
-        db = DBSCAN(eps=eps, min_samples=min_samples).fit(vectors)
-        labels = db.labels_
+        labels = self._cluster(vectors)
 
         core_samples_mask = np.zeros_like(labels, dtype=bool)
-        core_samples_mask[db.core_sample_indices_] = True
+        core_samples_mask[self.db.core_sample_indices_] = True
 
         # Number of clusters in labels, ignoring noise if present.
         n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
@@ -381,11 +399,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         ratio = min_samples/average_num_neighbors
         """
         
-        eps = self.db_kwargs.get('eps', 0.00019)
-        min_samples = self.db_kwargs.get('min_samples', 4)
-
-        db = DBSCAN(eps=eps, min_samples=min_samples).fit(soap_vectors)
-        labels = db.labels_
+        eps = self.db_kwargs.get('eps')
+        min_samples = self.db_kwargs.get('min_samples')
+        
+        labels = self._cluster(vectors)
 
         core_samples_mask = np.zeros_like(labels, dtype=bool)
         core_samples_mask[db.core_sample_indices_] = True
