@@ -200,7 +200,8 @@ class DBSCANStructureSampler(BaseStructureSampler):
             r_cut=r_cut,
             n_max=n_max,
             l_max=l_max,
-            sigma=sigma
+            sigma=sigma,
+            **self.soap_kwargs
         )
 
         soap_vectors_all = []
@@ -221,7 +222,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         # Declare variables before using them
         target_element: str
-        start_step: int, end_step: int, step_size: int
+        start_step: int
+        end_step: int
+        step_size: int
         save_file: str
     
         # Select specific atom indices by element
@@ -231,7 +234,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         relevant_steps = soap_vectors_all[start_step:end_step:step_size]
         
         # Compute the SOAP vectors for the selected atoms at each step
-        soap_vectors_selected_atoms = [soap_vectors_all(step) for step in relevant_steps]
+        soap_vectors_selected_atoms = [soap_vectors_all[step] for step in relevant_steps]
 
         # Extract the SOAP vectors for all selected atoms at each step
         soap_vectors_all_selected = [vectors[selected_atom_indices] for vectors in soap_vectors_selected_atoms]
@@ -261,8 +264,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
     def _cluster(self, data: list[Structure]):
         """Perform DBSCAN."""
+        
         eps = self.dbscan_kwargs.get('eps')
-        min_samples = self.dbscan_kwargs.get('min_samples')
+        min_samples = self.dbscan_kwargs.get("min_samples")
 
         db = DBSCAN(eps=eps, min_samples=min_samples).fit(data)
         labels = db.labels_
@@ -285,7 +289,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         labels = self._cluster(reduced_vectors)
 
         if self.core_ratio == "auto":
-            core_ratio = self._compute_core_ratio()
+            core_ratio = self._compute_core_ratio(reduced_vectors)
         else:
             core_ratio = self.core_ratio
 
@@ -385,7 +389,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         eps = self.dbscan_kwargs.get('eps')
         min_samples = self.dbscan_kwargs.get('min_samples')
         
-        labels = self._cluster(vectors)
+        labels = self._cluster(reduced_vectors)
 
         core_samples_mask = np.zeros_like(labels, dtype=bool)
         core_samples_mask[self._cluster.core_sample_indices_] = True
