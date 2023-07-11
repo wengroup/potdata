@@ -1,17 +1,16 @@
 """Samplers to select a subset of objects (e.g. structures) from a sequence."""
 import abc
-from typing import Any, Callable, Iterable, List
+from typing import Any, Callable, Iterable
 
 import numpy as np
 from monty.json import MSONable
 from pymatgen.core.structure import Structure
-
+import matplotlib.pyplot as plt
 from potdata.utils.dataops import serializable_slice, slice_sequence
-
+import matplotlib.cm as cm
 from sklearn.decomposition import PCA
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
-from ase.io import Trajectory
 from dscribe.descriptors import SOAP
 from pymatgen.io.ase import AseAtomsAdaptor
 
@@ -163,6 +162,8 @@ class DBSCANStructureSampler(BaseStructureSampler):
     
     def __init__(
         self,
+        elements: list[str],
+        target_elements: list[str],
         soap_kwargs: dict = None,
         post_soap_selection: Callable[
             [list[Structure], list[np.ndarray]], list[np.ndarray]
@@ -173,7 +174,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         reachable_ratio: float = 1.0,
         core_ratio: str | float = "auto",
         seed: int = 35,
-        elements: list[str],
         periodic: bool = True,
         r_cut: float = 5.0,
         n_max: int = 8,
@@ -182,7 +182,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         start_step: int = 6000,
         end_step: int = 10000,
         step_size: int = 5,
-        target_elements: list[str],
     ):
         self.soap_kwargs = soap_kwargs if soap_kwargs is None else {}
         self.post_soap_selection = post_soap_selection
@@ -203,6 +202,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.end_step = end_step
         self.step_size = step_size
         self.target_elements = target_elements
+        self.sampled_noisy_points = []
+        self.sampled_reachable_points = []
+        self.core_samples_mask = None
+        self.labels = []
 
         np.random.seed(seed)
 
@@ -215,7 +218,8 @@ class DBSCANStructureSampler(BaseStructureSampler):
         
         # Get unique elements from the structures
         elements = list(set([element.symbol for structure in data for element in structure.composition.elements]))
-
+        self.elements = elements
+        
         # Set up the SOAP descriptor with the dynamic elements
         soap_desc = SOAP(**self.soap_kwargs)
 
@@ -236,7 +240,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         """Convert structures to SOAP vectors for specific atoms."""
     
         # Select specific atom indices by element
-        selected_atom_indices = [i for i, atom in enumerate(soap_vectors_all[0][0]) if atom.symbol in self.target_elements]
+        selected_atom_indices = [
+            i for i, atom in enumerate(soap_vectors_all[0][0])
+            if atom.symbol in self.target_elements
+        ]
         
         # Extract the relevant steps
         relevant_steps = soap_vectors_all[self.start_step:self.end_step:self.step_size]
@@ -256,10 +263,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         """Perform dimension reduction on the SOAP vectors."""
 
         # Stack the SOAP vectors vertically
-        soap_vectors_dim = np.vstack(soap_vectors)
+        soap_vectors_dim = np.vstack(soap_vectors_array)
     
         # Reshape the stacked SOAP vectors into a n-dimensional array
-        soap_vectors_dim = soap_vectors_dim.reshape(len(soap_vectors), -1)
+        soap_vectors_dim = soap_vectors_dim.reshape(len(soap_vectors_array), -1)
 
         # Perform PCA dimension reduction
         pca = PCA(n_components=dim)  # Set the desired number of components
@@ -278,19 +285,22 @@ class DBSCANStructureSampler(BaseStructureSampler):
         reduced_vectors = np.concatenate(soap_vectors_all, axis=1)
 
         if self.pca_dim is not None:
+            reduced_vectors = [reduced_vectors]  # Wrap reduced_vectors in a list
             reduced_vectors = self._dim_reduction(reduced_vectors, self.pca_dim)
-
+            
+        self.reduced_vectors = reduced_vectors
+        
         labels = self._cluster(reduced_vectors)
-
+        core_samples_mask = self.core_samples_mask  # Define core_samples_mask attribute
+        
         if self.core_ratio == "auto":
-            core_ratio = self._compute_core_ratio(reduced_vectors)
+            core_ratio = self._compute_core_ratio()
         else:
             core_ratio = self.core_ratio
 
-        ### TODO, select core, reachable, and noisy data points based on their ratios
-        core_samples_mask = np.zeros_like(labels, dtype=bool)
-        core_samples_mask[self.core_sample_indices_] = True
-        self.core_samples_mask = core_samples_mask
+        # TODO, select core, reachable, and noisy data points based on their ratios
+        self.core_samples_mask = np.zeros_like(labels, dtype=bool)
+        self.core_samples_mask[self.core_sample_indices_] = True
 
         # Sample noisy points
         noisy_points = reduced_vectors[labels == -1]
@@ -298,7 +308,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         sampled_noisy_points = np.random.choice(noisy_points, sample_size_noisy, replace=False)
 
         # Sample reachable points
-        reachable_points = reduced_vectors[(labels != -1) & (~core_samples_mask)]
+        reachable_points = reduced_vectors[(labels != -1) & (~self.core_samples_mask)]
         sample_size_reachable = int(self.reachable_ratio * len(reachable_points))
         sampled_reachable_points = np.random.choice(reachable_points, sample_size_reachable, replace=False)
 
@@ -306,38 +316,36 @@ class DBSCANStructureSampler(BaseStructureSampler):
         core_points = reduced_vectors[core_samples_mask]
         sample_size_core = int(self.core_ratio * len(core_points))
         sampled_core_points = np.random.choice(core_points, sample_size_core, replace=False)
-    
+
+        # Store sampled noisy points as class attribute
+        self.sampled_noisy_points = sampled_noisy_points
+        self.sampled_reachable_points = sampled_reachable_points
+
         # `selected` below should be a list of pymatgen Structure
         selected = []
 
         # Add sampled noisy points to selected
         for point in sampled_noisy_points:
-            # Create pymatgen Structure object from point
-            structure = create_structure_from_point(point)
-            selected.append(structure)
+            selected.append(data[point])
 
         # Add sampled reachable points to selected
         for point in sampled_reachable_points:
-            # Create pymatgen Structure object from point
-            structure = create_structure_from_point(point)
-            selected.append(structure)
+            selected.append(data[point])
 
         # Add sampled core points to selected
         for point in sampled_core_points:
-            # Create pymatgen Structure object from point
-            structure = create_structure_from_point(point)
-            selected.append(structure)
-        
+            selected.append(data[point])
+
         return selected
 
     def _cluster(self, data: list[Structure]):
         """Perform DBSCAN."""
-        
+
         db = DBSCAN(eps=self.eps, min_samples=self.min_samples).fit(data)
         self.core_sample_indices_ = db.core_sample_indices_
-        labels = db.labels_
+        self.labels_ = db.labels_
 
-        return labels
+        return self.labels_
     
     def plot(self):
         """Function to plot the results of the selection.
@@ -345,36 +353,26 @@ class DBSCANStructureSampler(BaseStructureSampler):
         This can be called after the `sample` method to visualize the results.
         """
 
-        core_samples_mask = self.core_samples_mask
+        labels = self.labels
 
         # Number of clusters in labels, ignoring noise if present.
         n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
 
         unique_labels = set(self.labels)
-        colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+        cmap = cm.get_cmap("Spectral")
+        colors = [cmap(each) for each in np.linspace(0, 1, len(unique_labels))]
 
-        # Plot noisy points and reachable points
-        noisy_points = self.reduced_vectors[labels == -1]
-        sampled_noisy_points = random.sample(list(noisy_points), int(self.noisy_ratio * len(noisy_points)))
-
-        reachable_points = self.reduced_vectors[np.logical_and(labels != -1, ~core_samples_mask)]
-        sampled_reachable_points = random.sample(list(reachable_points), int(self.reachable_ratio * len(reachable_points)))
-
+        # Access sampled noisy points from class attribute
+        sampled_noisy_points = self.sampled_noisy_points
+        sampled_reachable_points = self.sampled_reachable_points
+        
         plt.scatter(
-            [point[0] for point in sampled_noisy_points],
-            [point[1] for point in sampled_noisy_points],
-            color='black',
+            [point[0] for point in sampled_noisy_points] + [point[0] for point in sampled_reachable_points],
+            [point[1] for point in sampled_noisy_points] + [point[1] for point in sampled_reachable_points],
+            color=['black'] * len(sampled_noisy_points) + ['gray'] * len(sampled_reachable_points),
             marker='o',
             s=30,
-            label='Noisy Points'
-        )
-        plt.scatter(
-            [point[0] for point in sampled_reachable_points],
-            [point[1] for point in sampled_reachable_points],
-            color='gray',
-            marker='o',
-            s=30,
-            label='Reachable Points'
+            label=['Noisy Points'] * len(sampled_noisy_points) + ['Reachable Points'] * len(sampled_reachable_points)
         )
 
         # Plot a sample of core points for each cluster
@@ -383,8 +381,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
                 continue  # Skip the noisy points
 
             class_member_mask = labels == k
-            core_points = self.reduced_vectors[class_member_mask & core_samples_mask]
-            sampled_points = random.sample(list(core_points), int(self.core_ratio * len(core_points)))
+            core_points = self.reduced_vectors[class_member_mask & self.core_samples_mask]
+            sample_size_core = int(self.core_ratio * len(core_points))
+            sampled_points = np.random.choice(core_points, size=sample_size_core, replace=False)
 
             plt.scatter(
                 [point[0] for point in sampled_points],
@@ -414,10 +413,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
         average_neighbors_of_core_points = np.mean([len(neighbors) for neighbors in neighborhoods])
 
         # Calculate the ratio
-        ratio = min_samples / average_neighbors_of_core_points
+        ratio = self.min_samples / average_neighbors_of_core_points
 
-        return average_neighbors_of_core_points, ratio
-        
-        average_neighbors_of_core_points, ratio = _compute_core_ratio(soap_vectors_array)
         print("Average number of neighbors of core points:", average_neighbors_of_core_points)
         print("Ratio:", ratio)
+
+        return average_neighbors_of_core_points, ratio
