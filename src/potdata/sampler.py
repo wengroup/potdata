@@ -159,7 +159,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
             points.
         seed: random seed for the sampling.
     """
-    
+
     def __init__(
         self,
         elements: list[str],
@@ -221,7 +221,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         else:
             core_ratio = self.core_ratio
 
-        # TODO, select core, reachable, and noisy data points based on their ratios
         self.core_samples_mask = np.zeros_like(labels, dtype=bool)
         self.core_samples_mask[self.core_sample_indices_] = True
 
@@ -260,7 +259,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
             selected.append(data[point])
 
         return selected
-    
+
     def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
         """Convert structures to SOAP vectors."""
 
@@ -348,7 +347,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         # Calculate the ratio
         ratio = self.min_samples / average_neighbors_of_core_points
-    
+
         def plot(self):
         """Function to plot the results of the selection.
 
