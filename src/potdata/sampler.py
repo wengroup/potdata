@@ -174,14 +174,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         reachable_ratio: float = 1.0,
         core_ratio: str | float = "auto",
         seed: int = 35,
-        periodic: bool = True,
-        r_cut: float = 5.0,
-        n_max: int = 8,
-        l_max: int = 6,
-        sigma: float = 0.1,
-        start_step: int = 6000,
-        end_step: int = 10000,
-        step_size: int = 5,
     ):
         self.soap_kwargs = soap_kwargs if soap_kwargs is None else {}
         self.post_soap_selection = post_soap_selection
@@ -193,14 +185,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.core_sample_indices_ = []
         self._indices: list[int] = []
         self.elements = elements
-        self.periodic = periodic
-        self.r_cut = r_cut
-        self.n_max = n_max
-        self.l_max = l_max
-        self.sigma = sigma
-        self.start_step = start_step
-        self.end_step = end_step
-        self.step_size = step_size
         self.target_elements = target_elements
         self.sampled_noisy_points = []
         self.sampled_reachable_points = []
@@ -212,67 +196,6 @@ class DBSCANStructureSampler(BaseStructureSampler):
         # Retrieve eps and min_samples from dbscan_kwargs
         self.eps = self.dbscan_kwargs.get('eps')
         self.min_samples = self.dbscan_kwargs.get('min_samples')
-    
-    def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
-        """Convert structures to SOAP vectors."""
-        
-        # Get unique elements from the structures
-        elements = list(set([element.symbol for structure in data for element in structure.composition.elements]))
-        self.elements = elements
-        
-        # Set up the SOAP descriptor with the dynamic elements
-        soap_desc = SOAP(**self.soap_kwargs)
-
-        soap_vectors_all = []
-
-        for structure in data:
-            # Convert pymatgen Structure to ASE Atoms
-            atoms = AseAtomsAdaptor.get_atoms(structure)
-
-            # Compute the SOAP vector for the current structure
-            soap_vector = soap_desc.create(atoms)
-
-            soap_vectors_all.append(soap_vector)
-
-        return soap_vectors_all
-
-    def post_soap_selection(self, soap_vectors_all: list[np.ndarray]) -> np.ndarray:
-        """Convert structures to SOAP vectors for specific atoms."""
-    
-        # Select specific atom indices by element
-        selected_atom_indices = [
-            i for i, atom in enumerate(soap_vectors_all[0][0])
-            if atom.symbol in self.target_elements
-        ]
-        
-        # Extract the relevant steps
-        relevant_steps = soap_vectors_all[self.start_step:self.end_step:self.step_size]
-        
-        # Extract the SOAP vectors for the selected atoms at each step
-        soap_vectors_selected_atoms = [soap_vectors_all[step] for step in relevant_steps]
-
-        # Extract the SOAP vectors for all selected atoms at each step
-        soap_vectors_all_selected = [vectors[selected_atom_indices] for vectors in soap_vectors_selected_atoms]
-
-        # Convert the SOAP vectors to a numpy array
-        soap_vectors_array = np.array(soap_vectors_all_selected)
-
-        return soap_vectors_array
-
-    def _dim_reduction(self, soap_vectors_array: list[np.ndarray], dim: int):
-        """Perform dimension reduction on the SOAP vectors."""
-
-        # Stack the SOAP vectors vertically
-        soap_vectors_dim = np.vstack(soap_vectors_array)
-    
-        # Reshape the stacked SOAP vectors into a n-dimensional array
-        soap_vectors_dim = soap_vectors_dim.reshape(len(soap_vectors_array), -1)
-
-        # Perform PCA dimension reduction
-        pca = PCA(n_components=dim)  # Set the desired number of components
-        reduced_vectors = pca.fit_transform(soap_vectors_dim)
-         
-        return reduced_vectors
 
     def sample(self, data: list[Structure]) -> list[Structure]:
         """"""
@@ -287,12 +210,12 @@ class DBSCANStructureSampler(BaseStructureSampler):
         if self.pca_dim is not None:
             reduced_vectors = [reduced_vectors]  # Wrap reduced_vectors in a list
             reduced_vectors = self._dim_reduction(reduced_vectors, self.pca_dim)
-            
+
         self.reduced_vectors = reduced_vectors
-        
+
         labels = self._cluster(reduced_vectors)
         core_samples_mask = self.core_samples_mask  # Define core_samples_mask attribute
-        
+
         if self.core_ratio == "auto":
             core_ratio = self._compute_core_ratio()
         else:
@@ -314,7 +237,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         # Sample core points
         core_points = reduced_vectors[core_samples_mask]
-        sample_size_core = int(self.core_ratio * len(core_points))
+        sample_size_core = int(core_ratio * len(core_points))
         sampled_core_points = np.random.choice(core_points, sample_size_core, replace=False)
 
         # Store sampled noisy points as class attribute
@@ -337,17 +260,96 @@ class DBSCANStructureSampler(BaseStructureSampler):
             selected.append(data[point])
 
         return selected
+    
+    def _get_soap_vectors(self, data: list[Structure]) -> list[np.ndarray]:
+        """Convert structures to SOAP vectors."""
+
+        # Get unique elements from the structures
+        elements = list(set([element.symbol for structure in data for element in structure.composition.elements]))
+        self.elements = elements
+
+        # Set up the SOAP descriptor with the dynamic elements
+        soap_desc = SOAP(**self.soap_kwargs)
+
+        soap_vectors_all = []
+
+        for structure in data:
+            # Convert pymatgen Structure to ASE Atoms
+            atoms = AseAtomsAdaptor.get_atoms(structure)
+
+            # Compute the SOAP vector for the current structure
+            soap_vector = soap_desc.create(atoms)
+
+            soap_vectors_all.append(soap_vector)
+
+        return soap_vectors_all
+
+    def post_soap_selection(self, soap_vectors_all: list[np.ndarray]) -> np.ndarray:
+        """Convert structures to SOAP vectors for specific atoms."""
+
+        # Select specific atom indices by element
+        selected_atom_indices = [
+            i for i, atom in enumerate(soap_vectors_all[0][0])
+            if atom.symbol in self.target_elements
+        ]
+
+        # Extract the relevant steps
+        relevant_steps = soap_vectors_all[self.start_step:self.end_step:self.step_size]
+
+        # Extract the SOAP vectors for the selected atoms at each step
+        soap_vectors_selected_atoms = [soap_vectors_all[step] for step in relevant_steps]
+
+        # Extract the SOAP vectors for all selected atoms at each step
+        soap_vectors_all_selected = [vectors[selected_atom_indices] for vectors in soap_vectors_selected_atoms]
+
+        # Convert the SOAP vectors to a numpy array
+        soap_vectors_array = np.array(soap_vectors_all_selected)
+
+        return soap_vectors_array
+
+    def _dim_reduction(self, soap_vectors_array: list[np.ndarray], dim: int):
+        """Perform dimension reduction on the SOAP vectors."""
+
+        # Stack the SOAP vectors vertically
+        soap_vectors_dim = np.vstack(soap_vectors_array)
+
+        # Reshape the stacked SOAP vectors into a n-dimensional array
+        soap_vectors_dim = soap_vectors_dim.reshape(len(soap_vectors_array), -1)
+
+        # Perform PCA dimension reduction
+        pca = PCA(n_components=dim)  # Set the desired number of components
+        reduced_vectors = pca.fit_transform(soap_vectors_dim)
+
+        return reduced_vectors
 
     def _cluster(self, data: list[Structure]):
         """Perform DBSCAN."""
 
-        db = DBSCAN(eps=self.eps, min_samples=self.min_samples).fit(data)
+        db = DBSCAN(eps=self.eps, min_samples=self.min_samples)
+        db.fit(data)
         self.core_sample_indices_ = db.core_sample_indices_
         self.labels_ = db.labels_
 
         return self.labels_
+
+        def _compute_core_ratio(self):
+        """Compute the ratio of core data points to sample.
+
+        ratio = min_samples/average_num_neighbors
+        """
+
+        core_points = self.reduced_vectors[self.core_samples_mask]
+
+        # Compute the average number of neighbors for all core points
+        neighbors_model = NearestNeighbors(**self.dbscan_kwargs)
+        neighbors_model.fit(core_points)
+        neighborhoods = neighbors_model.radius_neighbors(core_points, return_distance=False)
+        average_neighbors_of_core_points = np.mean([len(neighbors) for neighbors in neighborhoods])
+
+        # Calculate the ratio
+        ratio = self.min_samples / average_neighbors_of_core_points
     
-    def plot(self):
+        def plot(self):
         """Function to plot the results of the selection.
 
         This can be called after the `sample` method to visualize the results.
@@ -365,7 +367,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         # Access sampled noisy points from class attribute
         sampled_noisy_points = self.sampled_noisy_points
         sampled_reachable_points = self.sampled_reachable_points
-        
+
         plt.scatter(
             [point[0] for point in sampled_noisy_points] + [point[0] for point in sampled_reachable_points],
             [point[1] for point in sampled_noisy_points] + [point[1] for point in sampled_reachable_points],
@@ -397,25 +399,3 @@ class DBSCANStructureSampler(BaseStructureSampler):
         plt.title(f"Estimated number of clusters: {n_clusters_}")
         plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.show()
-
-    def _compute_core_ratio(self):
-        """Compute the ratio of core data points to sample.
-
-        ratio = min_samples/average_num_neighbors
-        """
-
-        core_points = self.reduced_vectors[self.core_samples_mask]
-
-        # Compute the average number of neighbors for all core points
-        neighbors_model = NearestNeighbors(radius=self.eps)
-        neighbors_model.fit(core_points)
-        neighborhoods = neighbors_model.radius_neighbors(core_points, return_distance=False)
-        average_neighbors_of_core_points = np.mean([len(neighbors) for neighbors in neighborhoods])
-
-        # Calculate the ratio
-        ratio = self.min_samples / average_neighbors_of_core_points
-
-        print("Average number of neighbors of core points:", average_neighbors_of_core_points)
-        print("Ratio:", ratio)
-
-        return average_neighbors_of_core_points, ratio
