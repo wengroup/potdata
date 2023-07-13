@@ -9,7 +9,6 @@ description = "Potdata: a Python package for orchestrating data for developing i
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
-    "scipy",
     "pymatgen",
     "ase",
     "scikit-learn",

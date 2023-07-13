@@ -220,7 +220,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         # select soap vectors for atoms of specific species
         if self.species_to_select is not None:
-            soap_vec_atoms = self.select_by_species(data, soap_vec_atoms)
+            soap_vec_atoms = self._select_by_species(
+                data, soap_vec_atoms, self.species_to_select
+            )
 
         # soap vector of each structure, 2D array (n_structures, n_features)
         self._soap_vectors = self._get_soap_vector_structure(
@@ -306,17 +308,14 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return soap_vectors
 
-    def select_by_species(
-        self, structures: list[Structure], vectors: list[np.ndarray]
+    @staticmethod
+    def _select_by_species(
+        structures: list[Structure], vectors: list[np.ndarray], species: list[str]
     ) -> list[np.ndarray]:
         """Select SOAP vectors for atoms of specific species."""
 
         def select_one(struct, vec):
-            indices = [
-                i
-                for i, s in enumerate(struct.species)
-                if s.symbol in self.species_to_select
-            ]
+            indices = [i for i, s in enumerate(struct.species) if s.symbol in species]
             return vec[indices]
 
         selected = []
