@@ -10,8 +10,9 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = [
     "scipy",
-    "atomate2",
-    "ase"
+    "pymatgen",
+    "ase",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
