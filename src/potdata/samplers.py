@@ -1,5 +1,6 @@
 """Samplers to select a subset of objects (e.g. structures) from a sequence."""
 import abc
+import warnings
 from typing import Any, Iterable
 
 import numpy as np
@@ -194,13 +195,13 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.species_to_select = species_to_select
         self.pool_method = pool_method
         self.pca_dim = pca_dim
-        self.dbscan_kwargs = dbscan_kwargs if dbscan_kwargs is None else {}
+        self.dbscan_kwargs = dbscan_kwargs if dbscan_kwargs is not None else {}
         self.core_ratio = core_ratio
         self.noisy_ratio = noisy_ratio
         self.reachable_ratio = reachable_ratio
         self.ratio = ratio
 
-        # indices of all, sampled core, reachable, and noisy data points
+        # indices of all sampled points and sampled core, reachable, and noisy points
         self._indices = None
         self._core_indices = None
         self._reachable_indices = None
@@ -219,7 +220,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         # select soap vectors for atoms of specific species
         if self.species_to_select is not None:
-            soap_vec_atoms = self.select_by_species(soap_vec_atoms)
+            soap_vec_atoms = self.select_by_species(data, soap_vec_atoms)
 
         # soap vector of each structure, 2D array (n_structures, n_features)
         self._soap_vectors = self._get_soap_vector_structure(
@@ -250,20 +251,24 @@ class DBSCANStructureSampler(BaseStructureSampler):
             core_ratio = self.core_ratio
 
         # sample soap vectors/structures
+        print("Total number of data points:", len(data))
+
         self._core_indices, core = self._select(data, core_idx, core_ratio * self.ratio)
+        print(f"Sampled {len(core)} out of {len(core_idx)} core points.")
+
         self._reachable_indices, reachable = self._select(
             data, reachable_idx, self.reachable_ratio * self.ratio
         )
+        print(f"Sampled {len(reachable)} out of {len(reachable_idx)} reachable points.")
+
         self._noisy_indices, noisy = self._select(
             data, noisy_idx, self.noisy_ratio * self.ratio
         )
+        print(f"Sampled {len(noisy)} out of {len(noisy_idx)} noisy points.")
 
         sampled_structures = core + reachable + noisy
-
         self._indices = (
-            self._core_indices.tolist()
-            + self._reachable_indices.tolist()
-            + self._noisy_indices.tolist()
+            self._core_indices + self._reachable_indices + self._noisy_indices
         )
 
         return sampled_structures
@@ -287,7 +292,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         species = set()
         for structure in data:
-            species.update(structure.composition.symbol_set)
+            species.update(structure.symbol_set)
 
         if "species" in soap_kwargs:
             raise ValueError(
@@ -309,8 +314,8 @@ class DBSCANStructureSampler(BaseStructureSampler):
         def select_one(struct, vec):
             indices = [
                 i
-                for i, atom in enumerate(struct)
-                if atom.species.symbol in self.species_to_select
+                for i, s in enumerate(struct.species)
+                if s.symbol in self.species_to_select
             ]
             return vec[indices]
 
@@ -344,33 +349,46 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return reduced
 
-    def _cluster(self, data: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _cluster(self, data: np.ndarray) -> tuple[list[int], list[int], list[int]]:
         """
         Perform DBSCAN and classify the data points into core, reachable and noisy ones.
         """
 
-        clustering = DBSCAN(**self.dbscan_kwargs).fix(data)
-        clustering.fit(data)
+        clustering = DBSCAN(**self.dbscan_kwargs).fit(data)
 
         # get core, reachable and noisy points
         labels = clustering.labels_
-        core_indices = clustering.core_sample_indices_.sort()
-        noisy_indices = np.where(labels != -1).sort()
-        reachable_indices = np.asarray(
-            [
-                i
-                for i in range(len(labels))
-                if i not in core_indices and i not in noisy_indices
-            ]
-        )
+        core_indices = sorted(clustering.core_sample_indices_)
+        noisy_indices = sorted(np.nonzero(labels == -1)[0])
+        reachable_indices = [
+            i
+            for i in range(len(labels))
+            if i not in core_indices and i not in noisy_indices
+        ]
+
+        if not noisy_indices:
+            warnings.warn(
+                "No noisy points are found. Consider decreasing `eps` or increasing "
+                "`min_samples` of DBSCAN."
+            )
+        if not reachable_indices:
+            warnings.warn(
+                "No reachable points are found. Consider decreasing `eps` or "
+                "increasing `min_samples` of DBSCAN."
+            )
+        if not core_indices:
+            warnings.warn(
+                "No core points are found. Consider increasing `eps` or decreasing "
+                "`min_samples` of DBSCAN."
+            )
 
         return core_indices, noisy_indices, reachable_indices
 
     @staticmethod
     def _estimate_core_ratio(
         soap_vectors: np.ndarray,
-        core_indices: np.ndarray,
-        reachable_indices: np.ndarray,
+        core_indices: list[int],
+        reachable_indices: list[int],
         radius: float,
     ) -> float:
         """Estimate the ratio of core points to all data points.
@@ -384,23 +402,38 @@ class DBSCANStructureSampler(BaseStructureSampler):
         neigh = NearestNeighbors(radius=radius)
         neigh.fit(soap_vectors)
         neighbors = neigh.radius_neighbors(soap_vectors, return_distance=False)
-        n_avg_reachable = np.mean([len(n) for n in neighbors[reachable_indices]])
-        n_avg_core = np.mean([len(n) for n in neighbors[core_indices]])
+
+        if len(reachable_indices) == 0:
+            n_avg_reachable = 1
+        else:
+            n_avg_reachable = np.mean([len(n) for n in neighbors[reachable_indices]])
+
+        if len(core_indices) == 0:
+            n_avg_core = 1
+        else:
+            n_avg_core = np.mean([len(n) for n in neighbors[core_indices]])
 
         ratio = n_avg_reachable / n_avg_core
+
+        print(
+            f"Estimated core ratio = num_avg_reachable/num_avg_core = "
+            f"{n_avg_reachable:.2f}/{n_avg_core:.2f} = {ratio:.2f}."
+        )
 
         return ratio
 
     @staticmethod
-    def _select(data: list[Structure], indices: np.ndarray, ratio: float):
-        """Select a subset of structures."""
+    def _select(
+        data: list[Structure], indices: list[int], ratio: float
+    ) -> tuple[list[int], list[Structure]]:
+        """Select a subset of structures and indices."""
         sample_size = int(ratio * len(indices))
-        selected_indices = np.random.choice(indices, sample_size, replace=False)
+        selected_indices = sorted(np.random.choice(indices, sample_size, replace=False))
         selected_structures = [data[i] for i in selected_indices]
 
         return selected_indices, selected_structures
 
-    def plot(self, show: bool = True, figname: str = "dbscan_sample.pdf"):
+    def plot(self, show: bool = False, figname: str = "dbscan_sample.pdf"):
         """Function to plot the results of the selection.
 
         Args:
@@ -424,13 +457,37 @@ class DBSCANStructureSampler(BaseStructureSampler):
             soap_vectors = self._soap_vectors
 
         # soap vectors of sampled points
-        noisy = soap_vectors(self._noisy_indices)
-        reachable = soap_vectors(self._reachable_indices)
-        core = soap_vectors(self._core_indices)
+        core = soap_vectors[self._core_indices]
+        reachable = soap_vectors[self._reachable_indices]
+        noisy = soap_vectors[self._noisy_indices]
 
-        plt.scatter(noisy[:, 0], noisy[:, 1], label="noisy")
-        plt.scatter(reachable[:, 0], reachable[:, 1], label="reachable")
-        plt.scatter(core[:, 0], core[:, 1], label="core")
+        plt.figure(figsize=(5, 5))
+        plt.scatter(
+            core[:, 0],
+            core[:, 1],
+            color="C0",
+            alpha=0.8,
+            edgecolors="white",
+            label="core",
+        )
+        plt.scatter(
+            reachable[:, 0],
+            reachable[:, 1],
+            color="C1",
+            alpha=0.8,
+            edgecolors="white",
+            label="reachable",
+        )
+        plt.scatter(
+            noisy[:, 0],
+            noisy[:, 1],
+            color="C2",
+            alpha=0.8,
+            edgecolors="white",
+            label="noisy",
+        )
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
 
         plt.legend()
 
