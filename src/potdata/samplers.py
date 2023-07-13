@@ -2,7 +2,6 @@
 import abc
 from typing import Any, Iterable
 
-import matplotlib.cm as cm
 import numpy as np
 from monty.dev import requires
 from monty.json import MSONable
@@ -274,9 +273,9 @@ class DBSCANStructureSampler(BaseStructureSampler):
         "`dscribe` is required to use the sampler. To install it, see "
         "https://github.com/SINGROUP/dscribe",
     )
-    @staticmethod
+    # This can be a staticmethod; not use because @requires does not work with it
     def _get_soap_vector_atom(
-        data: list[Structure], soap_kwargs: dict
+        self, data: list[Structure], soap_kwargs: dict
     ) -> list[np.ndarray]:
         """Convert structures to SOAP vectors of all atoms.
 
@@ -353,7 +352,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         clustering = DBSCAN(**self.dbscan_kwargs).fix(data)
         clustering.fit(data)
 
-        # get core, reachable and noise points
+        # get core, reachable and noisy points
         labels = clustering.labels_
         core_indices = clustering.core_sample_indices_.sort()
         noisy_indices = np.where(labels != -1).sort()
