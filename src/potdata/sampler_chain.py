@@ -1,6 +1,6 @@
 """This module contains classes for chaining multiple samplers."""
 
-from typing import Any
+from typing import Any, Sequence
 
 from potdata.samplers import BaseSampler
 
@@ -16,7 +16,7 @@ class SamplerChain(BaseSampler):
         self.samplers = samplers
         self._indices: list[int] = []
 
-    def sample(self, data: list[Any]) -> list[Any]:
+    def sample(self, data: Sequence[Any]) -> list[Any]:
         """
         Apply the sampler to a list of data.
 
@@ -33,7 +33,7 @@ class SamplerChain(BaseSampler):
 
         self._indices = selected_indices
 
-        return data
+        return list(data)
 
     @property
     def indices(self) -> list[int]:

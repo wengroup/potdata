@@ -1,7 +1,7 @@
 """Samplers to select a subset of objects (e.g. structures) from a sequence."""
 import abc
 import warnings
-from typing import Any, Iterable
+from typing import Any, Sequence
 
 import numpy as np
 from monty.dev import requires
@@ -30,7 +30,7 @@ class BaseSampler(MSONable):
     """
 
     @abc.abstractmethod
-    def sample(self, data: Iterable) -> list[Any]:
+    def sample(self, data: Sequence[Any]) -> list[Any]:
         """Run the sampler to sample a subset of the data.
 
         Args:
@@ -84,7 +84,7 @@ class RandomSampler(BaseSampler):
         self._indices: list[int] = None
         np.random.seed(self.seed)
 
-    def sample(self, data: Iterable) -> list[Any]:
+    def sample(self, data: Sequence[Any]) -> list[Any]:
         data = [x for x in data]
 
         if self.size > len(data):
@@ -123,7 +123,7 @@ class SliceSampler(BaseSampler):
         self.index = index
         self._indices: list[int] = None
 
-    def sample(self, data: Iterable) -> list[Any]:
+    def sample(self, data: Sequence[Any]) -> list[Any]:
         selected, self._indices = slice_sequence(data, self.index)
 
         return selected
@@ -202,10 +202,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         self.ratio = ratio
 
         # indices of all sampled points and sampled core, reachable, and noisy points
-        self._indices = None
-        self._core_indices = None
-        self._reachable_indices = None
-        self._noisy_indices = None
+        self._indices: list[int] = None
+        self._core_indices: list[int] = None
+        self._reachable_indices: list[int] = None
+        self._noisy_indices: list[int] = None
 
         # soap vector of each structure
         self._soap_vectors = None

@@ -6,8 +6,6 @@ import random
 from itertools import groupby
 from typing import Any
 
-import ase
-import ase.io
 import numpy as np
 import pandas as pd
 import ruamel.yaml
