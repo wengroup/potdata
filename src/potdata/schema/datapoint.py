@@ -6,7 +6,6 @@ from typing import Union
 import numpy as np
 from ase import Atoms
 from ase.io import Trajectory
-from atomate2.vasp.schemas.calc_types.enums import TaskType
 from emmet.core.tasks import OutputDoc
 from emmet.core.vasp.calculation import IonicStep
 from pydantic import BaseModel, Field
@@ -16,9 +15,19 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from potdata import __version__
 from potdata._typing import Matrix3D, Vector3D
 from potdata.samplers import BaseSampler
+from potdata.utils.enum import ValueEnum
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
 __all__ = ["Property", "Weight", "DataPoint", "DataCollection"]
+
+
+class TaskType(ValueEnum):
+    """Vasp calculation task types."""
+
+    Static = "Static"
+    Structure_Optimization = "Structure Optimization"
+    Molecule_Dynamics = "Molecular Dynamics"
+    Unrecognized = "Unrecognized"
 
 
 # TODO, need to come up with a better way of tracking the provenance of data
@@ -30,9 +39,7 @@ class Provenance(BaseModel):
         description="The uuid of the job that generated the data.",
     )
     task_type: Union[TaskType, str] = Field(
-        None,
-        description="Task type of the job that generated the data, `Static`, "
-        "`Structure Optimization`, and `Molecular Dynamics`.",
+        None, description="Task type of the job that generated the data."
     )
     frame: Union[None, int] = Field(
         None,
