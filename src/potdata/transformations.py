@@ -17,8 +17,6 @@ from pymatgen.transformations.standard_transformations import (
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
 
-from potdata.samplers import BaseSampler
-
 try:
     import m3gnet
 except ImportError:
@@ -246,8 +244,6 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: temperature for MD, in K.
         timestep: timestep for MD, in fs.
         steps: number of MD steps.
-        sampler: sampler to sample structures from the MD trajectory. Samples can be
-            found in the `potdata.sampler` module. If `None`, no sampling is performed.
     """
 
     def __init__(
@@ -256,13 +252,11 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: float = 300,
         timestep: float = 1,
         steps: int = 1000,
-        sampler: BaseSampler = None,
     ):
         self.ensemble = ensemble
         self.temperature = temperature
         self.timestep = timestep
         self.steps = steps
-        self.sampler = sampler
 
     def apply_transformation(self, structure: Structure) -> list[dict]:
         """
@@ -270,14 +264,9 @@ class BaseMDTransformation(AbstractTransformation):
             A list of structures from the trajectory.
         """
         structures = self.run_md(structure)
-        if self.sampler is not None:
-            selected = self.sampler.sample(structure)
-            indices = self.sampler.indices
-        else:
-            selected = structures
-            indices = list(range(len(structures)))
+        indices = list(range(len(structures)))
 
-        return [{"structure": s, "index": i} for s, i in zip(selected, indices)]
+        return [{"structure": s, "index": i} for s, i in zip(structures, indices)]
 
     @abc.abstractmethod
     def run_md(self, structure: Structure) -> list[Structure]:
@@ -335,7 +324,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
         md.run(steps=self.steps)
         ase_traj = Trajectory(trajectory_filename)
 
-        structures = [AseAtomsAdaptor.get_structure(frame) for frame in ase_traj]
+        structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
         return structures
 
