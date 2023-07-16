@@ -12,7 +12,7 @@ from sklearn.cluster import DBSCAN
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
-from potdata.utils.dataops import serializable_slice, slice_sequence
+from potdata.utils.dataops import slice_sequence
 
 try:
     from dscribe.descriptors import SOAP
@@ -116,10 +116,7 @@ class SliceSampler(BaseSampler):
             indices 10, 12, 14, ....
     """
 
-    # TODO, can we not use serializable_slice? and directly use slice?
-    #   This depends on how we use it in potflow.
-    #   This is difficult, because self.index need to be MSONable, but slice is not.
-    def __init__(self, index: list[int] | serializable_slice):
+    def __init__(self, index: list[int] | slice):
         self.index = index
         self._indices: list[int] = None
 
@@ -131,6 +128,33 @@ class SliceSampler(BaseSampler):
     @property
     def indices(self) -> list[int]:
         return self._indices
+
+    def as_dict(self) -> dict:
+        if isinstance(self.index, slice):
+            # deal with `slice`, which cannot be serialized
+            index = {
+                "@class": "slice",
+                "start": self.index.start,
+                "stop": self.index.stop,
+                "step": self.index.step,
+            }
+        else:
+            index = self.index  # type: ignore
+
+        d = {
+            "@module": self.__class__.__module__,
+            "@class": self.__class__.__name__,
+            "index": index,
+        }
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        index = d["index"]
+        if isinstance(index, dict) and index["@class"] == "slice":
+            index = slice(index["start"], index["stop"], index["step"])
+        return cls(index=index)
 
 
 class DBSCANStructureSampler(BaseStructureSampler):

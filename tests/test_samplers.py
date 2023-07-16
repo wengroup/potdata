@@ -27,3 +27,7 @@ def test_slice_sampler():
 
     sampled_indices = sampler.indices
     assert sampled_indices == [2, 4, 6]
+
+    d = sampler.as_dict()
+    sampler2 = SliceSampler.from_dict(d)
+    assert sampler2.index == sampler.index
