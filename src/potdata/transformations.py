@@ -23,7 +23,12 @@ except ImportError:
     m3gnet = None
 
 
-__all__ = ["StrainTransformation", "PerturbTransformation", "M3gnetMDTransformation"]
+__all__ = [
+    "StrainTransformation",
+    "PerturbTransformation",
+    "BaseMDTransformation",
+    "M3gnetMDTransformation",
+]
 
 
 class StrainTransformation(AbstractTransformation):

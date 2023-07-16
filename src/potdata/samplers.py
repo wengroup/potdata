@@ -113,10 +113,10 @@ class SliceSampler(BaseSampler):
             corresponding indices are selected, e.g. `index=[0, 3, 5]` will select data
             points with indices 0, 3, and 5. Alternatively, a python slice object can be
             provided, e.g. `index=slice(10, None, 2)` will select data points with
-            indices 10, 12, 14, ....
+            indices 10, 12, 14, ... `None` to select all.
     """
 
-    def __init__(self, index: list[int] | slice):
+    def __init__(self, index: list[int] | slice | None):
         self.index = index
         self._indices: list[int] = None
 
@@ -196,6 +196,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
     """
 
     DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
+    DBSCAN_KWARGS = {"eps": 0.5, "min_samples": 5}
 
     def __init__(
         self,
@@ -216,14 +217,20 @@ class DBSCANStructureSampler(BaseStructureSampler):
             else self.DEFAULT_SOAP_KWARGS.copy()
         )
 
+        self.dbscan_kwargs = (
+            self.DBSCAN_KWARGS.copy().update(dbscan_kwargs)
+            if dbscan_kwargs is not None
+            else self.DBSCAN_KWARGS.copy()
+        )
+
         self.species_to_select = species_to_select
         self.pool_method = pool_method
         self.pca_dim = pca_dim
-        self.dbscan_kwargs = dbscan_kwargs if dbscan_kwargs is not None else {}
         self.core_ratio = core_ratio
         self.noisy_ratio = noisy_ratio
         self.reachable_ratio = reachable_ratio
         self.ratio = ratio
+        self.seed = seed
 
         # indices of all sampled points and sampled core, reachable, and noisy points
         self._indices: list[int] = None
@@ -234,7 +241,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         # soap vector of each structure
         self._soap_vectors = None
 
-        np.random.seed(seed)
+        np.random.seed(self.seed)
 
     def sample(self, data: list[Structure]) -> list[Structure]:
         """Sample the structures."""
@@ -277,6 +284,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
             core_ratio = self.core_ratio
 
         # sample soap vectors/structures
+        print("DBSCAN sampler:")
         print("Total number of data points:", len(data))
 
         self._core_indices, core = self._select(data, core_idx, core_ratio * self.ratio)
@@ -298,6 +306,10 @@ class DBSCANStructureSampler(BaseStructureSampler):
         )
 
         return sampled_structures
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
 
     @requires(
         SOAP,
