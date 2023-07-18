@@ -196,7 +196,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
     """
 
     DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
-    DBSCAN_KWARGS = {"eps": 0.5, "min_samples": 5}
+    DEFAULT_DBSCAN_KWARGS = {"eps": 0.5, "min_samples": 5}
 
     def __init__(
         self,
@@ -211,17 +211,13 @@ class DBSCANStructureSampler(BaseStructureSampler):
         ratio: float = 1.0,
         seed: int = 35,
     ):
-        self.soap_kwargs = (
-            self.DEFAULT_SOAP_KWARGS.copy().update(soap_kwargs)
-            if soap_kwargs is not None
-            else self.DEFAULT_SOAP_KWARGS.copy()
-        )
+        self.soap_kwargs = self.DEFAULT_SOAP_KWARGS.copy()
+        if soap_kwargs is not None:
+            self.soap_kwargs.update(soap_kwargs)
 
-        self.dbscan_kwargs = (
-            self.DBSCAN_KWARGS.copy().update(dbscan_kwargs)
-            if dbscan_kwargs is not None
-            else self.DBSCAN_KWARGS.copy()
-        )
+        self.dbscan_kwargs = self.DEFAULT_DBSCAN_KWARGS.copy()
+        if dbscan_kwargs is not None:
+            self.dbscan_kwargs.update(dbscan_kwargs)
 
         self.species_to_select = species_to_select
         self.pool_method = pool_method
