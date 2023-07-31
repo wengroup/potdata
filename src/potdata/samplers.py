@@ -526,3 +526,79 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         if show:
             plt.show()
+
+    def plot2(self, separation1: int, separation2: int, show: bool = False,
+              plot_only_sampled: bool = True,
+              figname: str = "Transition_sample.pdf"):
+        """Function to plot the results of the selection.
+
+        Args:
+            total separation steps = (M3gnetMDTransformation.steps - SliceSampler.start) / SliceSampler.step + 1
+            separation1: Index separating group1 and group2 (before transition and transition).
+            separation1 = (Actual transition step - SliceSampler.start) / SliceSampler.step + 1
+            separation2: Index separating group2 and group3 (transition and after transition).
+            separation2 = (Actual transition step - SliceSampler.start) / SliceSampler.step + 1
+            show: Whether to show the plot.
+            plot_only_sampled: if True, only the sampld points will be plotted; otherwise, all points will be used.
+            figname: Name of the figure file to save.
+
+        """
+        import matplotlib.pyplot as plt
+
+        if self._soap_vectors is None:
+            raise RuntimeError(
+                "The `sample` method must be called before calling `plot`."
+            )
+
+        # Note, it is highly possible that PCA reduced soap vectors have more than
+        # 2 dimensions, for example, if the input `pca_dim` is a float number.
+        # Here we do PCA again to reduce the dimension to 2, merely for plotting.
+        if self._soap_vectors.shape[1] > 2:
+            soap_vectors = self._dim_reduction(self._soap_vectors, 2)
+        else:
+            soap_vectors = self._soap_vectors
+
+        if plot_only_sampled:
+            group1 = np.asarray([soap_vectors[i] for i in self._indices if i < separation1])
+            group2 = np.asarray([soap_vectors[i] for i in self._indices if separation1 < i < separation2])
+            group3 = np.asarray([soap_vectors[i] for i in self._indices if i > separation2])
+        else:
+            # soap vectors of sampled points
+            group1 = soap_vectors[:separation1]  # Before transition
+            group2 = soap_vectors[separation1:separation2]  # During transition
+            group3 = soap_vectors[separation2:]  # After transition
+
+        plt.figure(figsize=(5, 5))
+        plt.scatter(
+            group1[:, 0],
+            group1[:, 1],
+            color="C0",
+            alpha=0.8,
+            edgecolors="white",
+            label="group1 (before transition)",
+        )
+        plt.scatter(
+            group2[:, 0],
+            group2[:, 1],
+            color="C1",
+            alpha=0.8,
+            edgecolors="white",
+            label="group2 (during transition)",
+        )
+        plt.scatter(
+            group3[:, 0],
+            group3[:, 1],
+            color="C2",
+            alpha=0.8,
+            edgecolors="white",
+            label="group3 (after transition)",
+        )
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
+
+        plt.legend()
+
+        plt.savefig(figname, bbox_inches="tight")
+
+        if show:
+            plt.show()
