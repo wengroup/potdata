@@ -105,12 +105,6 @@ class DataPoint(BaseModel):
 
     provenance: Provenance = Field(None, description="Provenance of the data point.")
 
-    # TODO DataPoints is stored in the DB using a JobStore, then uuid should be assigned
-    # Anyways, UUID should be handled by Provenance
-    # directly by the jobflow. See https://github.com/materialsproject/jobflow/blob/fb522a24cb695dc4cc20c72ae7e1ac77fc5ea7cf/src/jobflow/core/job.py#L601
-    # If we do not use JobStore, then we can use suuid to generate uuid.
-    # uuid: str = Field(default_factory=suuid, description="A uuid for the data point.")
-
     _schema: str = Field(
         __version__,
         description="Version of potdata used to create the document.",
@@ -240,10 +234,6 @@ class DataCollection(BaseModel):
     data_points: list[DataPoint] = Field(
         description="A sequence of data points that constitutes the data collection. "
     )
-
-    # uuid: str = Field(
-    #     default_factory=suuid, description="A uuid for the data collection."
-    # )
 
     label: str = Field(None, description="A description of the data collection.")
 

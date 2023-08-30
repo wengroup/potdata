@@ -190,6 +190,12 @@ class DBSCANStructureSampler(BaseStructureSampler):
             average number of neighbors of all core data points.
         noisy_ratio: ratio of noisy data points to sample.
         core_ratio: ratio of core data points to sample. If `auto`, the ratio will be
+            calculated automatically, according to the formula:
+            `core_ratio = n_avg_reachable/n_avg_core`, where `n_avg_reachable` is the
+            average number of neighbors of all reachable data points, and `n_avg_core`
+            is the average number of neighbors of all core data points. Alternatively,
+            you can provide a float value for the ratio, e.g. `core_ratio=0.5` will
+            sample half of the core data points.
         ratio: global ratio factor to be multiplied to the ratio of each category. This
             is useful to control the total number of data points to sample.
         seed: random seed for the sampling.

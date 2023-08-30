@@ -191,6 +191,8 @@ class VasprunCollectionAdaptor(BaseDataCollectionAdaptor):
             filenames = [path]
         elif path.is_dir():
             filenames = [p for p in path.rglob(f"*{name_pattern}*") if p.is_file()]
+        else:
+            raise RuntimeError(f"Path `{path}` is not a file or directory.")
 
         datapoints = []
         for p in filenames:
