@@ -7,6 +7,7 @@ from potdata.io.adaptor import (
     MTPCollectionAdaptor,
     VasprunAdaptor,
     VasprunCollectionAdaptor,
+    YAMLCollectionAdaptor,
 )
 from potdata.utils.dataops import set_field_precision, set_field_to_none
 from potdata.utils.path import to_path
@@ -67,6 +68,20 @@ def test_extxyz_collection_adaptor(fitting_data_collection, tmpdir):
         ]
 
         for dp_write, dp_read in zip(fitting_data_collection.data_points, all_dp_read):
+            _compare_two_data_points(dp_write, dp_read)
+
+
+def test_yaml_collection_adaptor(fitting_data_collection, tmpdir):
+    with tmpdir.as_cwd():
+        adaptor = YAMLCollectionAdaptor()
+        filename = "yaml_data.yaml"
+
+        adaptor.write(fitting_data_collection, filename, reference_energy=None)
+        all_dp_read = adaptor.read(filename)
+
+        for dp_write, dp_read in zip(
+            fitting_data_collection.data_points, all_dp_read.data_points
+        ):
             _compare_two_data_points(dp_write, dp_read)
 
 
