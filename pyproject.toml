@@ -11,6 +11,7 @@ dynamic = ["version"]
 dependencies = [
     "pymatgen",
     "ase",
+    "emmet-core",
     "scikit-learn",
 ]
 
