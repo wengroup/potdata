@@ -1,6 +1,4 @@
-"""
-Generate example fitting data for test.
-"""
+"""Generate example fitting data for test."""
 import os
 import tempfile
 from pathlib import Path
