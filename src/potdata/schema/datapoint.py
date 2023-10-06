@@ -105,10 +105,8 @@ class DataPoint(BaseModel):
 
     provenance: Provenance = Field(None, description="Provenance of the data point.")
 
-    _schema: str = Field(
-        __version__,
-        description="Version of potdata used to create the document.",
-        alias="schema",
+    potdata_version: str = Field(
+        __version__, description="Version of potdata used to create the document."
     )
 
     @classmethod
