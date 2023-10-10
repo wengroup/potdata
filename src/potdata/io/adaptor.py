@@ -1,16 +1,15 @@
 """Adaptors to convert a single DataPoint or a DataCollection to other format,
 such as extended xyz files, DeepMD format, and ACE format.
 """
-import copy
 import random
 from itertools import groupby
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import ruamel.yaml
 from monty.io import zopen
-from monty.json import MSONable
+from monty.json import MSONable, jsanitize
+from monty.serialization import dumpfn, loadfn
 from pymatgen.core import Lattice, Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp import Vasprun
@@ -191,6 +190,8 @@ class VasprunCollectionAdaptor(BaseDataCollectionAdaptor):
             filenames = [path]
         elif path.is_dir():
             filenames = [p for p in path.rglob(f"*{name_pattern}*") if p.is_file()]
+        else:
+            raise RuntimeError(f"Path `{path}` is not a file or directory.")
 
         datapoints = []
         for p in filenames:
@@ -550,9 +551,7 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
             A list of data points.
         """
         path = to_path(path)
-
-        with zopen(path, "r") as f:
-            data = ruamel.yaml.safe_load(f)
+        data = loadfn(path, fmt="yaml")
 
         if isinstance(data, (list, tuple)):
             datapoints = [DataPoint(**d) for d in data]
@@ -592,12 +591,12 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
         if as_list:
             out = datapoints
         else:
-            out = copy.copy(data)
-            out.data_points = datapoints  # type: ignore
+            d = {k: v for k, v in data.__dict__.items() if k != "data_points"}
+            out = DataCollection(data_points=datapoints, **d)
             out = out.dict()  # type: ignore
 
-        with open(path, "w") as f:
-            ruamel.yaml.safe_dump(out, f)
+        out = jsanitize(out, strict=True)
+        dumpfn(out, path, fmt="yaml")
 
         return [path]
 

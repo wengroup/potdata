@@ -1,14 +1,12 @@
 """Define fitting data point that contains configuration, property, weight etc."""
-
-
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 from ase import Atoms
 from ase.io import Trajectory
 from emmet.core.tasks import OutputDoc
 from emmet.core.vasp.calculation import IonicStep
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 
@@ -34,36 +32,36 @@ class TaskType(ValueEnum):
 class Provenance(BaseModel):
     """Provenance of the data point."""
 
-    job_uuid: str = Field(
+    job_uuid: Optional[str] = Field(
         None,
         description="The uuid of the job that generated the data.",
     )
-    task_type: Union[TaskType, str] = Field(
+    task_type: Optional[TaskType] = Field(
         None, description="Task type of the job that generated the data."
     )
-    frame: Union[None, int] = Field(
+    frame: Optional[int] = Field(
         None,
         description="From a relaxation or molecular dynamics trajectory, multiple "
-        "configurations can be extracted. This field can be used to give the frame of "
-        "the trajectory that the data point corresponds to.",
+        "configurations can be extracted. This field can be used to give "
+        "the frame of the trajectory that the data point corresponds to.",
     )
 
 
 class Property(BaseModel):
     """Properties associated with an atomic configuration."""
 
-    energy: float = Field(
+    energy: Optional[float] = Field(
         None,
         description="Total energy of a configuration. Example units: eV.",
     )
 
-    forces: list[Vector3D] = Field(
+    forces: Optional[list[Vector3D]] = Field(
         None,
         description="Forces on atoms. Shape: (N, 3), where N is the number of atoms "
         "in the configuration. Example units: eV/A.",
     )
 
-    stress: Matrix3D = Field(
+    stress: Optional[Matrix3D] = Field(
         None,
         description="Stress on the simulation box. Example units: eV/A^3.",
     )
@@ -99,22 +97,26 @@ class DataPoint(BaseModel):
         description="Properties associated with the configuration."
     )
 
-    weight: Weight = Field(None, description="Weight for the configuration.")
+    # TODO, change None to a default value
+    weight: Weight = Field(
+        default_factory=Weight, description="Weight for the configuration."
+    )
 
-    label: str = Field(None, description="A description of the data data point.")
+    @field_validator("weight", mode="before")
+    @classmethod
+    def replace_none(cls, v: Weight):
+        return Weight() if v is None else v
 
-    provenance: Provenance = Field(None, description="Provenance of the data point.")
+    label: Optional[str] = Field(
+        None, description="A description of the data data point."
+    )
 
-    # TODO DataPoints is stored in the DB using a JobStore, then uuid should be assigned
-    # Anyways, UUID should be handled by Provenance
-    # directly by the jobflow. See https://github.com/materialsproject/jobflow/blob/fb522a24cb695dc4cc20c72ae7e1ac77fc5ea7cf/src/jobflow/core/job.py#L601
-    # If we do not use JobStore, then we can use suuid to generate uuid.
-    # uuid: str = Field(default_factory=suuid, description="A uuid for the data point.")
+    provenance: Optional[Provenance] = Field(
+        None, description="Provenance of the data point."
+    )
 
-    _schema: str = Field(
-        __version__,
-        description="Version of potdata used to create the document.",
-        alias="schema",
+    potdata_version: str = Field(
+        __version__, description="Version of potdata used to create the document."
     )
 
     @classmethod
@@ -241,13 +243,11 @@ class DataCollection(BaseModel):
         description="A sequence of data points that constitutes the data collection. "
     )
 
-    # uuid: str = Field(
-    #     default_factory=suuid, description="A uuid for the data collection."
-    # )
+    label: Optional[str] = Field(
+        None, description="A description of the data collection."
+    )
 
-    label: str = Field(None, description="A description of the data collection.")
-
-    reference_energy: dict[str, float] = Field(
+    reference_energy: Optional[dict[str, float]] = Field(
         None,
         description="Reference energy for each species. Typically, one would use the "
         "free atom energies as the reference energies.",
