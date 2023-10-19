@@ -536,14 +536,22 @@ class DBSCANStructureSampler(BaseStructureSampler):
     def plot2(self, separation1: int, separation2: int, show: bool = False,
               plot_only_sampled: bool = True,
               figname: str = "Transition_sample.pdf"):
-        """Function to plot the results of the selection.
+        """Function to plot the results of the transition, which composes of groups 1 (before transition),
+           group 2 (during transition) and group 3 (after transition). Free to add more groups if needed.
 
+           How to calculate the separation index:
+           
+           Separation index = ((Specific transition step - SliceSampler.start) / SliceSampler.step) + 1
+           
+           Specific transition step (int): The specific step at which the transition of interest occurs.
+           SliceSampler.start (int): The starting step for the SliceSampling process.
+           SliceSampler.step (int): The step size used for SliceSampling.
+           
+           Note: Don't forget to add one because the default numbering for steps starts from 1. 
+        
         Args:
-            total separation steps = (M3gnetMDTransformation.steps - SliceSampler.start) / SliceSampler.step + 1
-            separation1: Index separating group1 and group2 (before transition and transition).
-            separation1 = (Actual transition step - SliceSampler.start) / SliceSampler.step + 1
-            separation2: Index separating group2 and group3 (transition and after transition).
-            separation2 = (Actual transition step - SliceSampler.start) / SliceSampler.step + 1
+            separation1: The index marking the separation between groups 1 and 2.
+            separation2: The index marking the separation between groups 2 and 3.
             show: Whether to show the plot.
             plot_only_sampled: if True, only the sampld points will be plotted; otherwise, all points will be used.
             figname: Name of the figure file to save.
