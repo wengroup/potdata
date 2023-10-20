@@ -64,12 +64,12 @@ class StrainTransformation(AbstractTransformation):
     ):
         self.strain_states = (
             np.asarray(strain_states)
-            if strain_states
+            if strain_states is not None
             else self._get_default_strain_states()
         )
         self.strain_magnitudes = (
             np.asarray(strain_magnitudes)
-            if strain_magnitudes
+            if strain_magnitudes is not None
             else self._get_default_strain_magnitudes()
         )
         self.conventional = conventional
