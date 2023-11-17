@@ -306,7 +306,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
         structure: Structure,
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
-        **kwags,
+        **kwargs,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
         from m3gnet.models import MolecularDynamics
