@@ -333,6 +333,53 @@ class M3gnetMDTransformation(BaseMDTransformation):
 
         return structures
 
+class ACEMDTransformation(BaseMDTransformation):
+    """Molecular dynamics transformation using m3gnet and ACE."""
+
+    @requires(
+        ACE,
+        "`ACE` is needed for this transformation. To install it, see "
+        "https://pacemaker.readthedocs.io/en/latest/",
+    )
+    def run_md(
+        self,
+        structure: Structure,
+        trajectory_filename: str = "md.traj",
+        log_filename: str = "md.log",
+    ) -> list[Structure]:
+        from ase.io import Trajectory as Trajectory
+        from m3gnet.models import MolecularDynamics
+        from pymatgen.io.ase import AseAtomsAdaptor
+        from pyace import PyACECalculator
+
+        supported = ["nvt", "npt"]
+        if self.ensemble.lower() not in supported:
+            raise ValueError(
+                f"Unknown ensemble: {self.ensemble}. Supported are {supported}."
+            )
+
+        """
+        Run molecular dynamics simulation on a structure using ACE potentials.
+        """
+        # Assuming you have a trained ACE potential stored in "output_potential.yaml" and "output_potential.asi"
+        calc = PyACECalculator("output_potential.yaml")
+        calc.set_active_set("output_potential.asi")
+        
+        md = MolecularDynamics(
+            atoms=structure,
+            ensemble=self.ensemble,
+            temperature=self.temperature,
+            timestep=self.timestep,
+            trajectory=trajectory_filename,
+            logfile=log_filename,
+        )
+
+        md.run(steps=self.steps)
+        ase_traj = Trajectory(trajectory_filename)
+
+        structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
+
+        return structures
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
