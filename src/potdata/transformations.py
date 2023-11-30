@@ -336,6 +336,11 @@ class M3gnetMDTransformation(BaseMDTransformation):
 class ACEMDTransformation(BaseMDTransformation):
     """Molecular dynamics transformation using m3gnet and ACE."""
 
+    Args:
+        taut (float): time constant for Berendsen temperature coupling
+        loginterval (int): write to log file every interval steps
+        append_trajectory (bool): Whether to append to prev trajectory
+    
     @requires(
         ACE,
         "`ACE` is needed for this transformation. To install it, see "
@@ -348,7 +353,8 @@ class ACEMDTransformation(BaseMDTransformation):
         log_filename: str = "md.log",
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
-        from m3gnet.models import MolecularDynamics
+        from ase.md.nvtberendsen import NVTBerendsen
+        from ase import units
         from pymatgen.io.ase import AseAtomsAdaptor
         from pyace import PyACECalculator
 
@@ -365,16 +371,33 @@ class ACEMDTransformation(BaseMDTransformation):
         calc = PyACECalculator("output_potential.yaml")
         calc.set_active_set("output_potential.asi")
         
-        md = MolecularDynamics(
-            atoms=structure,
-            ensemble=self.ensemble,
-            temperature=self.temperature,
-            timestep=self.timestep,
-            trajectory=trajectory_filename,
-            logfile=log_filename,
-        )
+        # set calculator to ASE atoms
+        atoms.set_calculator(calc)
 
-        md.run(steps=self.steps)
+        # trigger calculation
+        atoms.get_potential_energy()
+
+        #per-atom extrapolation grades are stored in
+        calc.results["gamma"]
+
+        # Set the parameters for the NVTBerendsen ensemble
+        timestep = 1  # Set your desired timestep in femtoseconds
+
+        if taut is None:
+            taut = 100 * units.fs  # Keep the units consistent with the timestep
+        
+        self.dyn = NVTBerendsen(
+                self.atoms,
+                timestep * units.fs, # Convert femtoseconds to picoseconds
+                temperature_K=temperature,
+                taut=taut,
+                trajectory=trajectory,
+                logfile=logfile,
+                loginterval=loginterval,
+                append_trajectory=append_trajectory,
+            )
+
+        dyn.run(steps=self.steps)
         ase_traj = Trajectory(trajectory_filename)
 
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
