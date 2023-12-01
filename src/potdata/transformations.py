@@ -334,15 +334,17 @@ class M3gnetMDTransformation(BaseMDTransformation):
         return structures
 
 class ACEMDTransformation(BaseMDTransformation):
-    """Molecular dynamics transformation using m3gnet and ACE."""
+    """Molecular dynamics transformation using m3gnet and ACE.
 
     Args:
         taut (float): time constant for Berendsen temperature coupling
         loginterval (int): write to log file every interval steps
         append_trajectory (bool): Whether to append to prev trajectory
-    
+
+    """
+
     @requires(
-        ACE,
+        pyace,
         "`ACE` is needed for this transformation. To install it, see "
         "https://pacemaker.readthedocs.io/en/latest/",
     )
@@ -358,38 +360,27 @@ class ACEMDTransformation(BaseMDTransformation):
         from pymatgen.io.ase import AseAtomsAdaptor
         from pyace import PyACECalculator
 
-        if isinstance(potential, str):
-            potential = Potential(M3GNet.load(potential))
-
-        if isinstance(atoms, (Structure, Molecule)):
-            atoms = AseAtomsAdaptor().get_atoms(atoms)
-        self.atoms = atoms
-        self.atoms.set_calculator(M3GNetCalculator(potential=potential))
-
         # Initialize ACE calculator
-        ace_calculator = PyACECalculator("output_potential.yaml")
-        ace_calculator.set_active_set("output_potential.asi")
+        calc = PyACECalculator("output_potential.yaml")
+        calc.set_active_set("output_potential.asi")
 
-        self.ace_calculator = ace_calculator
+        self.calc = calc
 
-        if taut is None:
-            taut = 100 * timestep * units.fs
-        if taup is None:
-            taup = 1000 * timestep * units.fs
+        timestep = 1
+        loginterval = 1
+        append_trajectory=False
+        taut = 100 * timestep * units.fs
 
-        if ensemble.lower() == "nvt":
-            self.dyn = NVTBerendsen(
-                self.atoms,
-                timestep * units.fs,
-                temperature_K=temperature,
-                taut=taut,
-                trajectory=trajectory_filename,
-                logfile=log_filename,
-                loginterval=loginterval,
-                append_trajectory=append_trajectory,
-            )
-        else:
-            raise ValueError("Ensemble not supported")
+        self.dyn = NVTBerendsen(
+            atoms=structure,
+            timestep=timestep * units.fs,
+            temperature_K=self.temperature,
+            taut=taut,
+            trajectory=trajectory_filename,
+            logfile=log_filename,
+            loginterval=loginterval,
+            append_trajectory=append_trajectory,
+        )
 
         ase_traj = Trajectory(trajectory_filename)
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
@@ -398,12 +389,6 @@ class ACEMDTransformation(BaseMDTransformation):
 
     def run(self, steps: int):
         self.dyn.run(steps)
-
-    def set_atoms(self, atoms):
-        calculator = self.atoms.calc
-        self.atoms = atoms
-        self.dyn.atoms = atoms
-        self.dyn.atoms.set_calculator(calculator)
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
