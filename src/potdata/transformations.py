@@ -372,8 +372,8 @@ class ACEMDTransformation(BaseMDTransformation):
         taut = 100 * timestep * units.fs
 
         self.dyn = NVTBerendsen(
-            atoms=structure,
-            timestep=timestep * units.fs,
+            structure,
+            timestep * units.fs,
             temperature_K=self.temperature,
             taut=taut,
             trajectory=trajectory_filename,
