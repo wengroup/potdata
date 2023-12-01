@@ -353,6 +353,9 @@ class ACEMDTransformation(BaseMDTransformation):
         structure: Structure,
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
+        timestep: float = 1.0,
+        loginterval: int = 1,
+        append_trajectory: bool = False,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
         from ase.md.nvtberendsen import NVTBerendsen
@@ -360,20 +363,19 @@ class ACEMDTransformation(BaseMDTransformation):
         from pymatgen.io.ase import AseAtomsAdaptor
         from pyace import PyACECalculator
 
+        atoms = AseAtomsAdaptor.get_atoms(structure)
         # Initialize ACE calculator
         calc = PyACECalculator("output_potential.yaml")
         calc.set_active_set("output_potential.asi")
-
+        atoms.set_calculator(calc)
+        atoms.get_potential_energy()
         self.calc = calc
-
-        timestep = 1
-        loginterval = 1
-        append_trajectory=False
+        
         taut = 100 * timestep * units.fs
 
         self.dyn = NVTBerendsen(
-            structure,
-            timestep * units.fs,
+            atoms,
+            timestep=timestep * units.fs,
             temperature_K=self.temperature,
             taut=taut,
             trajectory=trajectory_filename,
@@ -381,7 +383,7 @@ class ACEMDTransformation(BaseMDTransformation):
             loginterval=loginterval,
             append_trajectory=append_trajectory,
         )
-
+        self.dyn.run(self.steps)
         ase_traj = Trajectory(trajectory_filename)
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
