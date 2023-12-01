@@ -358,51 +358,52 @@ class ACEMDTransformation(BaseMDTransformation):
         from pymatgen.io.ase import AseAtomsAdaptor
         from pyace import PyACECalculator
 
-        supported = ["nvt", "npt"]
-        if self.ensemble.lower() not in supported:
-            raise ValueError(
-                f"Unknown ensemble: {self.ensemble}. Supported are {supported}."
-            )
+        if isinstance(potential, str):
+            potential = Potential(M3GNet.load(potential))
 
-        """
-        Run molecular dynamics simulation on a structure using ACE potentials.
-        """
-        # Assuming you have a trained ACE potential stored in "output_potential.yaml" and "output_potential.asi"
-        calc = PyACECalculator("output_potential.yaml")
-        calc.set_active_set("output_potential.asi")
-        
-        # set calculator to ASE atoms
-        atoms.set_calculator(calc)
+        if isinstance(atoms, (Structure, Molecule)):
+            atoms = AseAtomsAdaptor().get_atoms(atoms)
+        self.atoms = atoms
+        self.atoms.set_calculator(M3GNetCalculator(potential=potential))
 
-        # trigger calculation
-        atoms.get_potential_energy()
+        # Initialize ACE calculator
+        ace_calculator = PyACECalculator("output_potential.yaml")
+        ace_calculator.set_active_set("output_potential.asi")
 
-        #per-atom extrapolation grades are stored in
-        calc.results["gamma"]
-
-        # Set the parameters for the NVTBerendsen ensemble
-        timestep = 1  # Set your desired timestep in femtoseconds
+        self.ace_calculator = ace_calculator
 
         if taut is None:
-            taut = 100 * units.fs  # Keep the units consistent with the timestep
-        
-        self.dyn = NVTBerendsen(
+            taut = 100 * timestep * units.fs
+        if taup is None:
+            taup = 1000 * timestep * units.fs
+
+        if ensemble.lower() == "nvt":
+            self.dyn = NVTBerendsen(
                 self.atoms,
-                timestep * units.fs, # Convert femtoseconds to picoseconds
+                timestep * units.fs,
                 temperature_K=temperature,
                 taut=taut,
-                trajectory=trajectory,
-                logfile=logfile,
+                trajectory=trajectory_filename,
+                logfile=log_filename,
                 loginterval=loginterval,
                 append_trajectory=append_trajectory,
             )
+        else:
+            raise ValueError("Ensemble not supported")
 
-        dyn.run(steps=self.steps)
         ase_traj = Trajectory(trajectory_filename)
-
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
         return structures
+
+    def run(self, steps: int):
+        self.dyn.run(steps)
+
+    def set_atoms(self, atoms):
+        calculator = self.atoms.calc
+        self.atoms = atoms
+        self.dyn.atoms = atoms
+        self.dyn.atoms.set_calculator(calculator)
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
