@@ -21,7 +21,7 @@ try:
     import m3gnet
 except ImportError:
     m3gnet = None
-
+import pyace
 
 __all__ = [
     "StrainTransformation",
@@ -351,9 +351,11 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
+        potential: Optional[Union[Potential, str]],
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
+        taut: Optional[float] = None,
         loginterval: int = 1,
         append_trajectory: bool = False,
     ) -> list[Structure]:
@@ -365,11 +367,9 @@ class ACEMDTransformation(BaseMDTransformation):
 
         atoms = AseAtomsAdaptor.get_atoms(structure)
         # Initialize ACE calculator
-        calc = PyACECalculator("output_potential.yaml")
-        calc.set_active_set("output_potential.asi")
+        calc = PyACECalculator("potential.yaml")
+        calc.set_active_set("potential.asi")
         atoms.set_calculator(calc)
-        atoms.get_potential_energy()
-        self.calc = calc
 
         taut = 100 * timestep * units.fs
 
@@ -388,9 +388,6 @@ class ACEMDTransformation(BaseMDTransformation):
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
         return structures
-
-    def run(self, steps: int):
-        self.dyn.run(steps)
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
