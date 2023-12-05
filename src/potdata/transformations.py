@@ -370,7 +370,7 @@ class ACEMDTransformation(BaseMDTransformation):
         atoms.set_calculator(calc)
         atoms.get_potential_energy()
         self.calc = calc
-        
+
         taut = 100 * timestep * units.fs
 
         self.dyn = NVTBerendsen(
