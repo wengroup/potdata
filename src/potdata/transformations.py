@@ -27,7 +27,8 @@ __all__ = [
     "StrainTransformation",
     "PerturbTransformation",
     "BaseMDTransformation",
-    "M3gnetMDTransformation",
+    "M3gnetMDTransformation"
+    "ACEMDTransformation",
 ]
 
 
