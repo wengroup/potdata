@@ -352,7 +352,7 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
-        potential: Optional[Union[Potential, str]],
+        #potential: [Union[Potential, str]],
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
@@ -371,7 +371,7 @@ class ACEMDTransformation(BaseMDTransformation):
         calc = PyACECalculator("potential.yaml")
         calc.set_active_set("potential.asi")
         atoms.set_calculator(calc)
-
+        self.calc = calc
         taut = 100 * timestep * units.fs
 
         self.dyn = NVTBerendsen(
