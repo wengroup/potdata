@@ -1,6 +1,7 @@
 """Adaptors to convert a single DataPoint or a DataCollection to other format,
 such as extended xyz files, DeepMD format, and ACE format.
 """
+import copy
 import random
 from itertools import groupby
 from typing import Any
@@ -563,7 +564,7 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
 
         return dc
 
-    # TODO: add dealing with reference_energy
+    # TODO add dealing with reference_energy
     def write(
         self,
         data: DataCollection,
@@ -586,14 +587,11 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
         """
         path = to_path(path)
 
-        datapoints = [remove_none_from_dict(dp.dict()) for dp in data.data_points]
-
         if as_list:
-            out = datapoints
+            out = [remove_none_from_dict(dp.dict()) for dp in data.data_points]
         else:
-            d = {k: v for k, v in data.__dict__.items() if k != "data_points"}
-            out = DataCollection(data_points=datapoints, **d)
-            out = out.dict()  # type: ignore
+            out = copy.copy(data)
+            out = remove_none_from_dict(out.dict())  # type: ignore
 
         out = jsanitize(out, strict=True)
         dumpfn(out, path, fmt="yaml")
