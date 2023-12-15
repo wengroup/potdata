@@ -1,6 +1,7 @@
 """Adaptors to convert a single DataPoint or a DataCollection to other format,
 such as extended xyz files, DeepMD format, and ACE format.
 """
+import copy
 import random
 from itertools import groupby
 from typing import Any
@@ -563,7 +564,7 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
 
         return dc
 
-    # TODO: add dealing with reference_energy
+    # TODO add dealing with reference_energy
     def write(
         self,
         data: DataCollection,
@@ -586,19 +587,108 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
         """
         path = to_path(path)
 
-        datapoints = [remove_none_from_dict(dp.dict()) for dp in data.data_points]
-
         if as_list:
-            out = datapoints
+            out = [remove_none_from_dict(dp.dict()) for dp in data.data_points]
         else:
-            d = {k: v for k, v in data.__dict__.items() if k != "data_points"}
-            out = DataCollection(data_points=datapoints, **d)
-            out = out.dict()  # type: ignore
+            out = copy.copy(data)
+            out = remove_none_from_dict(out.dict())  # type: ignore
 
         out = jsanitize(out, strict=True)
         dumpfn(out, path, fmt="yaml")
 
         return [path]
+
+
+class PymatgenCollectionAdaptor(BaseDataCollectionAdaptor):
+    """
+    A data collection adaptor that reads/writes data points from/to pymatgen structure
+    and the corresponding targets.
+
+    The file are saved as a json.
+
+    The input/output will be a json file, with the below keys:
+        - structure: a pymatgen structure
+        - energy: energy of the structure
+    and optionally, the below keys:
+        - forces: forces on the atoms
+        - stress: virialstress on the cell
+    """
+
+    def read(self, path: PathLike) -> DataCollection:  # type: ignore[override]
+        """
+        Read the data collection.
+
+        Args: Path to read the data collection. This can be a path to a file or path
+        to a directory.
+
+        """
+        path = to_path(path)
+        df = pd.read_json(path)
+        df["structure"] = df["structure"].apply(lambda s: Structure.from_dict(s))
+
+        data_points = []
+        for i, row in df.iterrows():
+            y = {}
+            for p in ["energy", "forces", "stress"]:
+                if p in row:
+                    y[p] = row[p]
+                else:
+                    y[p] = None
+            dp = DataPoint(structure=row["structure"], property=Property(**y))
+            data_points.append(dp)
+
+        dc = DataCollection(data_points=data_points)
+
+        return dc
+
+    def write(
+        self,
+        data: DataCollection,
+        path: PathLike,
+        *,
+        reference_energy: dict[str, float] = None,
+    ) -> PathLike:
+        """
+        Write the data collection to file(s).
+
+        Args:
+            data: Data points to write.
+            path: Path to write the data collection. This can be a path to a file or
+                to a directory.
+            reference_energy: A dictionary of reference energies for each species.
+                In general, one would prefer to reference energy against the free atom
+                energies. If `None`, the reference energy is set to zero.
+
+        Returns:
+            Path to the file or a list of filenames to which the data are written.
+        """
+
+        data_points = data.data_points
+
+        data_dict = {"structure": [dp.structure.as_dict() for dp in data_points]}
+
+        energy = [
+            dp.get_cohesive_energy(reference_energy=reference_energy)
+            for dp in data_points
+        ]
+        forces = [dp.property.forces for dp in data_points]
+        stress = [dp.property.stress for dp in data_points]
+
+        if None not in energy:
+            data_dict["energy"] = energy
+        if None not in forces:
+            data_dict["forces"] = forces
+        if None not in stress:
+            data_dict["stress"] = stress
+
+        df = pd.DataFrame(data_dict)
+
+        path = to_path(path)
+        if path.is_dir():
+            path = path.joinpath("data.json")
+        df.to_json(path)
+
+        return path
 
 
 class ACECollectionAdaptor(BaseDataCollectionAdaptor):
