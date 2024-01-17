@@ -8,7 +8,7 @@ from monty.dev import requires
 from monty.json import MSONable
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
-from sklearn.cluster import DBSCAN
+from sklearn.cluster import DBSCAN, KMeans
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 
@@ -616,3 +616,245 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         if show:
             plt.show()
+
+class KMeansStructureSampler(BaseStructureSampler):
+    """Sample structures using KMeans clustering.
+
+    Args:
+        kmeans_kwargs: Arguments to pass to `sklearn.cluster.KMeans`. You should
+            provide the `n_clusters` argument to specify the number of clusters.
+    """
+
+    DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
+    DEFAULT_KMEANS_KWARGS = {"n_clusters": 8}
+
+    def __init__(
+        self,
+        soap_kwargs: dict = None,
+        species_to_select: list[str] | None = None,
+        pool_method: str = "concatenate",
+        pca_dim: int | None = None,
+        kmeans_kwargs: dict = None,
+        ratio: float = 1.0,
+        seed: int = 35,
+    ):
+        self.soap_kwargs = self.DEFAULT_SOAP_KWARGS.copy()
+        if soap_kwargs is not None:
+            self.soap_kwargs.update(soap_kwargs)
+
+        self.kmeans_kwargs = self.DEFAULT_KMEANS_KWARGS.copy()
+        self.kmeans_kwargs["n_init"] = 10
+        if kmeans_kwargs is not None:
+            self.kmeans_kwargs.update(kmeans_kwargs)
+
+        self.species_to_select = species_to_select
+        self.pool_method = pool_method
+        self.pca_dim = pca_dim
+        self.ratio = ratio
+        self.seed = seed
+
+        # Indices of all sampled points and sampled clusters
+        self._indices: list[int] = None
+        self._cluster_indices: list[int] = None
+
+        # SOAP vector of each structure
+        self._soap_vectors = None
+
+        np.random.seed(self.seed)
+
+    def sample(self, data: list[Structure]) -> list[Structure]:
+        """Sample the structures using KMeans clustering."""
+
+        # Soap vectors of all atoms for all structures
+        soap_vec_atoms = self._get_soap_vector_atom(data, self.soap_kwargs)
+
+        # select soap vectors for atoms of specific species
+        if self.species_to_select is not None:
+            soap_vec_atoms = self._select_by_species(
+                data, soap_vec_atoms, self.species_to_select
+            )
+
+        # Soap vector of each structure, 2D array (n_structures, n_features)
+        self._soap_vectors = self._get_soap_vector_structure(
+            soap_vec_atoms, self.pool_method
+        )
+
+        # Dimension reduction with PCA
+        if self.pca_dim is not None:
+            self._soap_vectors = self._dim_reduction(self._soap_vectors, self.pca_dim)
+
+        # Classify soap vectors/structures into clusters
+        cluster_idx = self._cluster_kmeans(self._soap_vectors)
+
+        # Sample soap vectors/structures
+        print("KMeans sampler:")
+        print("Total number of data points:", len(data))
+
+        self._cluster_indices, sampled_clusters = self._select_kmeans(
+            data, cluster_idx, self.ratio
+        )
+        print(f"Sampled {len(sampled_clusters)} out of {len(cluster_idx)} clusters.")
+
+        self._indices = self._cluster_indices
+
+        return sampled_clusters
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
+
+    @requires(
+        SOAP,
+        "`dscribe` is required to use the sampler. To install it, see "
+        "https://github.com/SINGROUP/dscribe",
+    )
+    # This can be a staticmethod; not use because @requires does not work with it
+    def _get_soap_vector_atom(
+        self, data: list[Structure], soap_kwargs: dict
+    ) -> list[np.ndarray]:
+        """Convert structures to SOAP vectors of all atoms.
+
+        Returns:
+            SOAP vectors for all structures. For each structure, the SOAP vectors is a
+            2D array of shape (n_atoms, n_features), where n_atoms is the number of
+            atoms and n_features is the number of features in the SOAP vector.
+        """
+
+        species = set()
+        for structure in data:
+            species.update(structure.symbol_set)
+
+        if "species" in soap_kwargs:
+            raise ValueError(
+                "The `species` argument in `soap_kwargs` is not allowed. "
+                "The species will be automatically determined from the structures."
+            )
+
+        soap = SOAP(species=species, **soap_kwargs)
+        atoms = [AseAtomsAdaptor.get_atoms(structure) for structure in data]
+        soap_vectors = list(soap.create(atoms))
+        
+        return soap_vectors
+
+    @staticmethod
+    def _select_by_species(
+        structures: list[Structure], vectors: list[np.ndarray], species: list[str]
+    ) -> list[np.ndarray]:
+        """Select SOAP vectors for atoms of specific species."""
+
+        def select_one(struct, vec):
+            indices = [i for i, s in enumerate(struct.species) if s.symbol in species]
+            return vec[indices]
+
+        selected = []
+        for struct, vec in zip(structures, vectors):
+            selected.append(select_one(struct, vec))
+
+        return selected
+
+    @staticmethod
+    def _get_soap_vector_structure(vectors: list[np.ndarray], pool: str) -> np.ndarray:
+        """Convert SOAP vectors of atoms to SOAP vectors of structures.
+
+        Return a 2D array of shape (n_structures, n_features).
+        """
+        if pool.lower() == "mean":
+            return np.asarray([np.mean(x, axis=0) for x in vectors])
+        elif pool.lower() == "concatenate":
+            return np.asarray([np.ravel(x) for x in vectors])
+        else:
+            supported = ["mean", "concatenate"]
+            raise ValueError(
+                f"Unsupported pooling method `{pool}`. Expected one of " f"{supported}."
+            )
+
+    @staticmethod
+    def _dim_reduction(x: np.ndarray, dim: int | float):
+        """Perform dimension reduction on a 2D array."""
+        pca = PCA(n_components=dim)
+        reduced = pca.fit_transform(x)
+
+        return reduced
+
+    def _cluster_kmeans(self, data: np.ndarray) -> list[int]:
+        """
+        Perform KMeans clustering and return cluster labels.
+        """
+
+        clustering = KMeans(n_clusters=self.kmeans_kwargs["n_clusters"], n_init=10).fit(data)
+        labels = clustering.labels_
+
+        unique_clusters = set(labels)
+        if len(unique_clusters) < self.kmeans_kwargs["n_clusters"]:
+            warnings.warn(
+                f"Number of clusters found ({len(unique_clusters)}) is less than "
+                f"specified n_clusters ({self.kmeans_kwargs['n_clusters']}). "
+                "Consider adjusting the parameters of KMeans."
+            )
+
+        return labels
+
+    def _select_kmeans(
+        self, data: list[Structure], cluster_labels: list[int], ratio: float
+    ) -> tuple[list[int], list[Structure]]:
+        """Select a subset of structures and indices for KMeans."""
+        unique_clusters = set(cluster_labels)
+        sample_size_per_cluster = int(ratio * len(unique_clusters))
+
+        selected_indices = []
+        selected_clusters = []
+
+        for cluster in unique_clusters:
+            cluster_indices = [i for i, label in enumerate(cluster_labels) if label == cluster]
+            cluster_size = min(sample_size_per_cluster, len(cluster_indices))
+            selected_indices.extend(np.random.choice(cluster_indices, cluster_size, replace=False))
+
+        selected_structures = [data[i] for i in selected_indices]
+
+        return selected_indices, selected_structures
+
+    def plot3(self, show: bool = False, figname: str = "kmeans_sample.pdf"):
+        """Function to plot the results of the KMeans clustering.
+
+        Args:
+            show: Whether to show the plot.
+            figname: Name of the figure file to save.
+
+        """
+    import matplotlib.pyplot as plt
+
+    if self._soap_vectors is None:
+        raise RuntimeError("The `sample` method must be called before calling `plot3`.")
+
+    # Note: It is highly possible that PCA reduced soap vectors have more than
+    # 2 dimensions, for example, if the input `pca_dim` is a float number.
+    # Here we do PCA again to reduce the dimension to 2, merely for plotting.
+    if self._soap_vectors.shape[1] > 2:
+        soap_vectors = self._dim_reduction(self._soap_vectors, 2)
+    else:
+        soap_vectors = self._soap_vectors
+
+    # soap vectors of sampled points
+    kmeans_labels = KMeans(n_clusters=self.kmeans_kwargs["n_clusters"]).fit_predict(
+        soap_vectors
+    )
+
+    plt.figure(figsize=(5, 5))
+    for cluster_label in range(self.kmeans_kwargs["n_clusters"]):
+        cluster_points = soap_vectors[kmeans_labels == cluster_label]
+        plt.scatter(
+            cluster_points[:, 0],
+            cluster_points[:, 1],
+            alpha=0.8,
+            edgecolors="white",
+            label=f"Cluster {cluster_label}",
+        )
+
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.legend()
+
+    plt.savefig(figname, bbox_inches="tight")
+
+    if show:
+        plt.show()
