@@ -643,7 +643,6 @@ class KMeansStructureSampler(BaseStructureSampler):
             self.soap_kwargs.update(soap_kwargs)
 
         self.kmeans_kwargs = self.DEFAULT_KMEANS_KWARGS.copy()
-        self.kmeans_kwargs["n_init"] = 10
         if kmeans_kwargs is not None:
             self.kmeans_kwargs.update(kmeans_kwargs)
 
@@ -781,7 +780,7 @@ class KMeansStructureSampler(BaseStructureSampler):
         Perform KMeans clustering and return cluster labels.
         """
 
-        clustering = KMeans(n_clusters=self.kmeans_kwargs["n_clusters"], n_init=10).fit(data)
+        clustering = KMeans(**self.kmeans_kwargs).fit(data)
         labels = clustering.labels_
 
         unique_clusters = set(labels)
@@ -799,14 +798,14 @@ class KMeansStructureSampler(BaseStructureSampler):
     ) -> tuple[list[int], list[Structure]]:
         """Select a subset of structures and indices for KMeans."""
         unique_clusters = set(cluster_labels)
-        sample_size_per_cluster = int(ratio * len(unique_clusters))
 
         selected_indices = []
         selected_clusters = []
 
         for cluster in unique_clusters:
             cluster_indices = [i for i, label in enumerate(cluster_labels) if label == cluster]
-            cluster_size = min(sample_size_per_cluster, len(cluster_indices))
+            cluster_size = int(ratio * len(cluster_indices)) if isinstance(ratio, float) else int(ratio)
+            cluster_size = min(cluster_size, len(cluster_indices))
             selected_indices.extend(np.random.choice(cluster_indices, cluster_size, replace=False))
 
         selected_structures = [data[i] for i in selected_indices]
