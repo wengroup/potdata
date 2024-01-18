@@ -827,40 +827,40 @@ class KMeansStructureSampler(BaseStructureSampler):
             figname: Name of the figure file to save.
 
         """
-    import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt
 
-    if self._soap_vectors is None:
-        raise RuntimeError("The `sample` method must be called before calling `plot3`.")
+        if self._soap_vectors is None:
+            raise RuntimeError("The `sample` method must be called before calling `plot`.")
 
-    # Note: It is highly possible that PCA reduced soap vectors have more than
-    # 2 dimensions, for example, if the input `pca_dim` is a float number.
-    # Here we do PCA again to reduce the dimension to 2, merely for plotting.
-    if self._soap_vectors.shape[1] > 2:
-        soap_vectors = self._dim_reduction(self._soap_vectors, 2)
-    else:
-        soap_vectors = self._soap_vectors
+        # Note: It is highly possible that PCA reduced soap vectors have more than
+        # 2 dimensions, for example, if the input `pca_dim` is a float number.
+        # Here we do PCA again to reduce the dimension to 2, merely for plotting.
+        if self._soap_vectors.shape[1] > 2:
+            soap_vectors = self._dim_reduction(self._soap_vectors, 2)
+        else:
+            soap_vectors = self._soap_vectors
 
-    # soap vectors of sampled points
-    kmeans_labels = KMeans(n_clusters=self.kmeans_kwargs["n_clusters"]).fit_predict(
-        soap_vectors
-    )
-
-    plt.figure(figsize=(5, 5))
-    for cluster_label in range(self.kmeans_kwargs["n_clusters"]):
-        cluster_points = soap_vectors[kmeans_labels == cluster_label]
-        plt.scatter(
-            cluster_points[:, 0],
-            cluster_points[:, 1],
-            alpha=0.8,
-            edgecolors="white",
-            label=f"Cluster {cluster_label}",
+        # soap vectors of sampled points
+        kmeans_labels = KMeans(n_clusters=self.kmeans_kwargs["n_clusters"]).fit_predict(
+            soap_vectors
         )
 
-    plt.xlabel("PC1")
-    plt.ylabel("PC2")
-    plt.legend()
+        plt.figure(figsize=(5, 5))
+        for cluster_label in range(self.kmeans_kwargs["n_clusters"]):
+            cluster_points = soap_vectors[kmeans_labels == cluster_label]
+            plt.scatter(
+                cluster_points[:, 0],
+                cluster_points[:, 1],
+                alpha=0.8,
+                edgecolors="white",
+                label=f"Cluster {cluster_label}",
+            )
 
-    plt.savefig(figname, bbox_inches="tight")
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
+        plt.legend()
 
-    if show:
-        plt.show()
+        plt.savefig(figname, bbox_inches="tight")
+
+        if show:
+            plt.show()
