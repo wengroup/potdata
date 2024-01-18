@@ -623,6 +623,11 @@ class KMeansStructureSampler(BaseStructureSampler):
     Args:
         kmeans_kwargs: Arguments to pass to `sklearn.cluster.KMeans`. You should
             provide the `n_clusters` argument to specify the number of clusters.
+        ratio: Sampling ratio. If an integer is provided, a fixed number of samples
+            is chosen from each cluster. If a float between 0 and 1 is provided, a
+            fraction of samples is chosen from each cluster.
+        Refer to `DBSCANSampler` for details on soap_kwargs, species_to_select,
+            pca_dim and seed.
     """
 
     DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
@@ -635,7 +640,7 @@ class KMeansStructureSampler(BaseStructureSampler):
         pool_method: str = "concatenate",
         pca_dim: int | None = None,
         kmeans_kwargs: dict = None,
-        ratio: float = 1.0,
+        ratio: int | float = 1,
         seed: int = 35,
     ):
         self.soap_kwargs = self.DEFAULT_SOAP_KWARGS.copy()
@@ -649,6 +654,8 @@ class KMeansStructureSampler(BaseStructureSampler):
         self.species_to_select = species_to_select
         self.pool_method = pool_method
         self.pca_dim = pca_dim
+        if isinstance(ratio, float) and not 0.0 < ratio < 1.0:
+            raise Value(f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}.")
         self.ratio = ratio
         self.seed = seed
 
@@ -812,7 +819,7 @@ class KMeansStructureSampler(BaseStructureSampler):
 
         return selected_indices, selected_structures
 
-    def plot3(self, show: bool = False, figname: str = "kmeans_sample.pdf"):
+    def plot(self, show: bool = False, figname: str = "kmeans_sample.pdf"):
         """Function to plot the results of the KMeans clustering.
 
         Args:
