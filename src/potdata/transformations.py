@@ -21,13 +21,17 @@ try:
     import m3gnet
 except ImportError:
     m3gnet = None
-
+try:
+    import pyace
+except ImportError:
+    pyace = None
 
 __all__ = [
     "StrainTransformation",
     "PerturbTransformation",
     "BaseMDTransformation",
-    "M3gnetMDTransformation",
+    "M3gnetMDTransformation"
+    "ACEMDTransformation",
 ]
 
 
@@ -335,6 +339,62 @@ class M3gnetMDTransformation(BaseMDTransformation):
 
         return structures
 
+class ACEMDTransformation(BaseMDTransformation):
+    """Molecular dynamics transformation using ACE.
+
+    Args:
+        taut (float): time constant for Berendsen temperature coupling
+        loginterval (int): write to log file every interval steps
+        append_trajectory (bool): Whether to append to prev trajectory
+
+    """
+
+    @requires(
+        pyace,
+        "`ACE` is needed for this transformation. To install it, see "
+        "https://pacemaker.readthedocs.io/en/latest/",
+    )
+    def run_md(
+        self,
+        structure: Structure,
+        potential_filename: Path | str = 'potential.yaml',
+        potential_asi_filename: Path | str = 'potential.asi',
+        trajectory_filename: str = "md.traj",
+        log_filename: str = "md.log",
+        timestep: float = 1.0,
+        taut: Optional[float] = None,
+        loginterval: int = 1,
+        append_trajectory: bool = False,
+    ) -> list[Structure]:
+        from ase.io import Trajectory as Trajectory
+        from ase.md.nvtberendsen import NVTBerendsen
+        from ase import units
+        from pymatgen.io.ase import AseAtomsAdaptor
+        from pyace import PyACECalculator
+
+        atoms = AseAtomsAdaptor.get_atoms(structure)
+        # Initialize ACE calculator
+        calc = PyACECalculator(potential_filename)
+        calc.set_active_set(potential_asi_filename)
+        atoms.set_calculator(calc)
+        self.calc = calc
+        taut = 100 * timestep * units.fs
+
+        self.dyn = NVTBerendsen(
+            atoms,
+            timestep=timestep * units.fs,
+            temperature_K=self.temperature,
+            taut=taut,
+            trajectory=trajectory_filename,
+            logfile=log_filename,
+            loginterval=loginterval,
+            append_trajectory=append_trajectory,
+        )
+        self.dyn.run(self.steps)
+        ase_traj = Trajectory(trajectory_filename)
+        structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
+
+        return structures
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
