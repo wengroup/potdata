@@ -21,7 +21,10 @@ try:
     import m3gnet
 except ImportError:
     m3gnet = None
-import pyace
+try:
+    import pyace
+except ImportError:
+    pyace = None
 
 __all__ = [
     "StrainTransformation",
@@ -337,7 +340,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
         return structures
 
 class ACEMDTransformation(BaseMDTransformation):
-    """Molecular dynamics transformation using m3gnet and ACE.
+    """Molecular dynamics transformation using ACE.
 
     Args:
         taut (float): time constant for Berendsen temperature coupling
@@ -354,7 +357,8 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
-        #potential: [Union[Potential, str]],
+        potential_filename: Path | str = 'potential.yaml'
+        potential_asi_filename: Path | str = 'potential.asi'
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
@@ -370,8 +374,8 @@ class ACEMDTransformation(BaseMDTransformation):
 
         atoms = AseAtomsAdaptor.get_atoms(structure)
         # Initialize ACE calculator
-        calc = PyACECalculator("potential.yaml")
-        calc.set_active_set("potential.asi")
+        calc = PyACECalculator(potential_filename)
+        calc.set_active_set(potential_asi_filename)
         atoms.set_calculator(calc)
         self.calc = calc
         taut = 100 * timestep * units.fs
