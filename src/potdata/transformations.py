@@ -357,8 +357,8 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
-        potential_filename: Path | str = 'potential.yaml'
-        potential_asi_filename: Path | str = 'potential.asi'
+        potential_filename: Path | str = 'potential.yaml',
+        potential_asi_filename: Path | str = 'potential.asi',
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
