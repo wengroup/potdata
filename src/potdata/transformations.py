@@ -5,7 +5,8 @@ structures.
 The transformations are similar to pymatgen.transformations.standard_transformations.
 """
 import abc
-
+from pathlib import Path
+from typing import Optional
 import numpy as np
 from monty.dev import requires
 from pymatgen.analysis.elasticity import Strain
@@ -357,8 +358,8 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
-        potential_filename: Path | str = 'potential.yaml',
-        potential_asi_filename: Path | str = 'potential.asi',
+        potential_filename: Path | str = 'output_potential.yaml',
+        potential_asi_filename: Path | str = 'output_potential.asi',
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
