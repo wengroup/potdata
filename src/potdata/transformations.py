@@ -347,6 +347,18 @@ class ACEMDTransformation(BaseMDTransformation):
         taut (float): time constant for Berendsen temperature coupling
         loginterval (int): write to log file every interval steps
         append_trajectory (bool): Whether to append to prev trajectory
+        gamma_value (γ): known as extrapolation grade, is often used to         
+        indicate a model's predictive power and how well the model fits
+        the training data. If γ is smaller than γselect, it implies no
+        active learning actions. If γ is between γselect and γbreak, it
+        indicates reliability for training set extension, and if γ is
+        larger than γbreak, it is risky and trigger termination of the
+        simulation. Here, γselect equal to 2 and γbreak equal to 10,
+        which is the first and second float in gamma_range
+        max_gamma_value: look at the maximum gamma of each configuration,
+        we want to include an entire configuration for labeling, not
+        individual atoms. So, as long as the maximum gamma of a
+        configuration is large enough, we should include this configuration
 
     """
 
@@ -366,6 +378,10 @@ class ACEMDTransformation(BaseMDTransformation):
         taut: Optional[float] = None,
         loginterval: int = 1,
         append_trajectory: bool = False,
+        gamma_values_filename: str = 'gamma_values.txt',
+        max_gamma_values_filename: str = 'max_gamma_values_per_step.txt',
+        max_gamma_between_2_and_10_filename: str = 'max_gamma_between_2_and_10_steps.txt',
+        gamma_range: Optional[tuple[float, float]] = None,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
         from ase.md.nvtberendsen import NVTBerendsen
