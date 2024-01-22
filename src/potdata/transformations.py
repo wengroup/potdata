@@ -262,11 +262,17 @@ class BaseMDTransformation(AbstractTransformation):
         temperature: float = 300,
         timestep: float = 1,
         steps: int = 1000,
+        potential_filename: Path | str = 'output_potential.yaml',
+        potential_asi_filename: Path | str = 'output_potential.asi',
+        gamma_range: Optional[tuple[float, float]] = None,
     ):
         self.ensemble = ensemble
         self.temperature = temperature
         self.timestep = timestep
         self.steps = steps
+        self.potential_filename = potential_filename
+        self.potential_asi_filename = potential_asi_filename
+        self.gamma_range = gamma_range
 
     def apply_transformation(self, structure: Structure) -> list[dict]:
         """
@@ -353,7 +359,7 @@ class ACEMDTransformation(BaseMDTransformation):
         active learning actions. If γ is between γselect and γbreak, it
         indicates reliability for training set extension, and if γ is
         larger than γbreak, it is risky and trigger termination of the
-        simulation. Here, γselect equal to 2 and γbreak equal to 10,
+        simulation. Usually, γselect equal to 2 and γbreak equal to 10,
         which is the first and second float in gamma_range
         max_gamma_value: look at the maximum gamma of each configuration,
         we want to include an entire configuration for labeling, not
@@ -370,8 +376,6 @@ class ACEMDTransformation(BaseMDTransformation):
     def run_md(
         self,
         structure: Structure,
-        potential_filename: Path | str = 'output_potential.yaml',
-        potential_asi_filename: Path | str = 'output_potential.asi',
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
         timestep: float = 1.0,
@@ -379,7 +383,6 @@ class ACEMDTransformation(BaseMDTransformation):
         loginterval: int = 1,
         append_trajectory: bool = False,
         gamma_values_filename: str = 'gamma_values.txt',
-        gamma_range: Optional[tuple[float, float]] = None,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
         from ase.md.nvtberendsen import NVTBerendsen
@@ -389,8 +392,8 @@ class ACEMDTransformation(BaseMDTransformation):
 
         atoms = AseAtomsAdaptor.get_atoms(structure)
         # Initialize ACE calculator
-        calc = PyACECalculator(potential_filename)
-        calc.set_active_set(potential_asi_filename)
+        calc = PyACECalculator(self.potential_filename)
+        calc.set_active_set(self.potential_asi_filename)
         atoms.set_calculator(calc)
         self.calc = calc
         
@@ -435,28 +438,28 @@ class ACEMDTransformation(BaseMDTransformation):
                 max_gamma_value = max(gamma_values)
                 output_file.write(f"Step {step}:\n Gamma value:\n[{max_gamma_value}]\n")
 
-        # Calculate and save max gamma values between 2 and 10
+        # Calculate and save max gamma values between γselet and γbreak
         if gamma_range:
             with open(max_gamma_values_output_filename, 'r') as file:
                 content = file.read()
 
             matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
 
-            max_gamma_between_2_and_10_output_filename = 'max_gamma_between_2_and_10_steps.txt'
+            max_gamma_between_γselet_and_γbreak_output_filename = 'max_gamma_between_γselet_and_γbreak_steps.txt'
             between_count = 0
-            with open(max_gamma_between_2_and_10_output_filename, 'w') as output_file:
+            with open(max_gamma_between_γselet_and_γbreak_output_filename, 'w') as output_file:
                 for match in matches:
                     step = int(match[0])
                     max_gamma_value = float(match[1])
                     if gamma_range[0] <= max_gamma_value <= gamma_range[1]:
-                        output_file.write(f"Step {step}: Max Gamma value between 2 and 10: {max_gamma_value}\n")
+                        output_file.write(f"Step {step}: Max Gamma value between γselet and γbreak: {max_gamma_value}\n")
                         between_count += 1
                     else:
-                        output_file.write(f"Step {step}: Max Gamma value not between 2 and 10.\n")
+                        output_file.write(f"Step {step}: Max Gamma value not between γselet and γbreak.\n")
 
             print(f"Results saved to {max_gamma_values_output_filename}")
-            print(f"Results saved to {max_gamma_between_2_and_10_output_filename}")
-            print(f"Total number of steps with Max Gamma values between 2 and 10: {between_count}")
+            print(f"Results saved to {max_gamma_between_γselet_and_γbreak_output_filename}")
+            print(f"Total number of steps with Max Gamma values between γselet and γbreak: {between_count}")
 
         return structures
 
