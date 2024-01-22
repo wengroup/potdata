@@ -379,8 +379,6 @@ class ACEMDTransformation(BaseMDTransformation):
         loginterval: int = 1,
         append_trajectory: bool = False,
         gamma_values_filename: str = 'gamma_values.txt',
-        max_gamma_values_filename: str = 'max_gamma_values_per_step.txt',
-        max_gamma_between_2_and_10_filename: str = 'max_gamma_between_2_and_10_steps.txt',
         gamma_range: Optional[tuple[float, float]] = None,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
@@ -395,6 +393,7 @@ class ACEMDTransformation(BaseMDTransformation):
         calc.set_active_set(potential_asi_filename)
         atoms.set_calculator(calc)
         self.calc = calc
+        
         taut = 100 * timestep * units.fs
 
         self.dyn = NVTBerendsen(
@@ -408,10 +407,86 @@ class ACEMDTransformation(BaseMDTransformation):
             append_trajectory=append_trajectory,
         )
         self.dyn.run(self.steps)
+        
+        # Convert ASE trajectory to pymatgen structures
         ase_traj = Trajectory(trajectory_filename)
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
+        # Save structures and gamma values to a file
+        with open(gamma_values_filename, 'w') as f:
+            for i, structure in enumerate(structures, start=0):
+                atoms = AseAtomsAdaptor.get_atoms(structure)
+                atoms.set_calculator(calc)
+                energy = atoms.get_potential_energy()
+                gamma = calc.results["gamma"]
+                f.write(f'Step {i}:\n Gamma value:\n {gamma},\n Energy: {energy}\n')
+
+        # Calculate and save max gamma values per step
+        with open(gamma_values_filename, 'r') as file:
+            content = file.read()
+
+        matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
+
+        max_gamma_values_output_filename = 'max_gamma_values_per_step.txt'
+        with open(max_gamma_values_output_filename, 'w') as output_file:
+            for match in matches:
+                step = int(match[0])
+                gamma_values = [float(val) for val in match[1].split()]
+                max_gamma_value = max(gamma_values)
+                output_file.write(f"Step {step}:\n Gamma value:\n[{max_gamma_value}]\n")
+
+        # Calculate and save max gamma values between 2 and 10
+        if gamma_range:
+            with open(max_gamma_values_output_filename, 'r') as file:
+                content = file.read()
+
+            matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
+
+            max_gamma_between_2_and_10_output_filename = 'max_gamma_between_2_and_10_steps.txt'
+            between_count = 0
+            with open(max_gamma_between_2_and_10_output_filename, 'w') as output_file:
+                for match in matches:
+                    step = int(match[0])
+                    max_gamma_value = float(match[1])
+                    if gamma_range[0] <= max_gamma_value <= gamma_range[1]:
+                        output_file.write(f"Step {step}: Max Gamma value between 2 and 10: {max_gamma_value}\n")
+                        between_count += 1
+                    else:
+                        output_file.write(f"Step {step}: Max Gamma value not between 2 and 10.\n")
+
+            print(f"Results saved to {max_gamma_values_output_filename}")
+            print(f"Results saved to {max_gamma_between_2_and_10_output_filename}")
+            print(f"Total number of steps with Max Gamma values between 2 and 10: {between_count}")
+
         return structures
+
+    def __reduce__(self):
+        # Exclude unpickleable objects during pickling
+        state = self.__dict__.copy()
+        
+        # Add more attributes to exclude
+        exclude_attributes = ['calc', 'dyn', '...']  # Add other relevant attributes
+
+        for attr in exclude_attributes:
+            state.pop(attr, None)
+
+        return (self.__class__, (), state)
+
+    def calculate_between_count(self) -> int:
+        """Calculate the between_count based on the saved gamma values file."""
+        # Assuming gamma values are saved in a file named 'gamma_values.txt'
+        with open('gamma_values.txt', 'r') as file:
+            content = file.read()
+
+        matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
+
+        between_count = 0
+        for match in matches:
+            max_gamma_value = max(map(float, match[1].split()))
+            if 2 <= max_gamma_value <= 10:
+                between_count += 1
+
+        return between_count
 
 # TODO this is obsolete, need to be adapted
 # @dataclass
