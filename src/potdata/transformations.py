@@ -17,7 +17,7 @@ from pymatgen.transformations.standard_transformations import (
     DeformStructureTransformation,
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
-
+import re
 try:
     import m3gnet
 except ImportError:
