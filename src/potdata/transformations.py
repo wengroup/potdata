@@ -439,7 +439,7 @@ class ACEMDTransformation(BaseMDTransformation):
                 output_file.write(f"Step {step}:\n Gamma value:\n[{max_gamma_value}]\n")
 
         # Calculate and save max gamma values between γselet and γbreak
-        if gamma_range:
+        if self.gamma_range:
             with open(max_gamma_values_output_filename, 'r') as file:
                 content = file.read()
 
@@ -451,7 +451,7 @@ class ACEMDTransformation(BaseMDTransformation):
                 for match in matches:
                     step = int(match[0])
                     max_gamma_value = float(match[1])
-                    if gamma_range[0] <= max_gamma_value <= gamma_range[1]:
+                    if self.gamma_range[0] <= max_gamma_value <= self.gamma_range[1]:
                         output_file.write(f"Step {step}: Max Gamma value between γselet and γbreak: {max_gamma_value}\n")
                         between_count += 1
                     else:
