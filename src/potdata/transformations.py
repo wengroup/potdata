@@ -486,7 +486,7 @@ class ACEMDTransformation(BaseMDTransformation):
         between_count = 0
         for match in matches:
             max_gamma_value = max(map(float, match[1].split()))
-            if 2 <= max_gamma_value <= 10:
+            if self.gamma_range[0] <= max_gamma_value <= self.gamma_range[1]:
                 between_count += 1
 
         return between_count
