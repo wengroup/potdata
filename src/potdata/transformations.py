@@ -440,18 +440,22 @@ class ACEMDTransformation(BaseMDTransformation):
 
         # Calculate and save max gamma values between γselet and γbreak
         if self.gamma_range:
+            selected_structures = []
             with open(max_gamma_values_output_filename, 'r') as file:
                 content = file.read()
 
             matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
 
             max_gamma_between_γselet_and_γbreak_output_filename = 'max_gamma_between_γselet_and_γbreak_steps.txt'
-            between_count = 0
+            
             with open(max_gamma_between_γselet_and_γbreak_output_filename, 'w') as output_file:
+                between_count = 0
                 for match in matches:
                     step = int(match[0])
                     max_gamma_value = float(match[1])
+
                     if self.gamma_range[0] <= max_gamma_value <= self.gamma_range[1]:
+                        selected_structures.append(structures[step])
                         output_file.write(f"Step {step}: Max Gamma value between γselet and γbreak: {max_gamma_value}\n")
                         between_count += 1
                     else:
@@ -461,6 +465,10 @@ class ACEMDTransformation(BaseMDTransformation):
             print(f"Results saved to {max_gamma_between_γselet_and_γbreak_output_filename}")
             print(f"Total number of steps with Max Gamma values between γselet and γbreak: {between_count}")
 
+            # Update the return statement to return the selected structures
+            return selected_structures
+
+        # Return all structures if no gamma range is specified
         return structures
 
     def __reduce__(self):
