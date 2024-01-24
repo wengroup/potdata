@@ -471,18 +471,6 @@ class ACEMDTransformation(BaseMDTransformation):
         # Return all structures if no gamma range is specified
         return structures
 
-    def __reduce__(self):
-        # Exclude unpickleable objects during pickling
-        state = self.__dict__.copy()
-        
-        # Add more attributes to exclude
-        exclude_attributes = ['calc', 'dyn', '...']  # Add other relevant attributes
-
-        for attr in exclude_attributes:
-            state.pop(attr, None)
-
-        return (self.__class__, (), state)
-
     def calculate_between_count(self) -> int:
         """Calculate the between_count based on the saved gamma values file."""
         # Assuming gamma values are saved in a file named 'gamma_values.txt'
