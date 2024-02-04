@@ -1,6 +1,7 @@
 """Adaptors to convert a single DataPoint or a DataCollection to other format,
 such as extended xyz files, DeepMD format, and ACE format.
 """
+
 import copy
 import random
 from itertools import groupby

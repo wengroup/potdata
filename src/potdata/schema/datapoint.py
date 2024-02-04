@@ -1,4 +1,5 @@
 """Define fitting data point that contains configuration, property, weight etc."""
+
 from typing import Optional, Union
 
 import numpy as np

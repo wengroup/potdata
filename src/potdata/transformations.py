@@ -4,6 +4,7 @@ structures.
 
 The transformations are similar to pymatgen.transformations.standard_transformations.
 """
+
 import abc
 from typing import Optional
 

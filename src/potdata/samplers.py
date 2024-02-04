@@ -1,4 +1,5 @@
 """Samplers to select a subset of objects (e.g. structures) from a sequence."""
+
 import abc
 import warnings
 from typing import Any, Sequence
