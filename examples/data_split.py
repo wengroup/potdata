@@ -1,11 +1,14 @@
 """Example of splitting the dataset into training and testing sets."""
 
 from pathlib import Path
-from sklearn.model_selection import train_test_split
-from potdata.schema.datapoint import DataCollection
-from potdata.io.adaptor import YAMLCollectionAdaptor
 
-def datasplit(filename, test_ratio=0.1):
+from sklearn.model_selection import train_test_split
+
+from potdata.io.adaptor import YAMLCollectionAdaptor
+from potdata.schema.datapoint import DataCollection
+
+
+def data_split(filename, test_ratio=0.1):
     # Read the data from the YAML file using the provided YAMLCollectionAdaptor
     yaml_adaptor = YAMLCollectionAdaptor()
     data_collection = yaml_adaptor.read(filename)
@@ -29,6 +32,7 @@ def datasplit(filename, test_ratio=0.1):
     yaml_adaptor.write(train_collection, output_train_filename)
     yaml_adaptor.write(test_collection, output_test_filename)
 
+
 if __name__ == "__main__":
     # Replace 'dataset.yaml' with the actual path to your dataset file
-    datasplit("dataset.yaml", test_ratio=0.1)
+    data_split("dataset.yaml", test_ratio=0.1)
