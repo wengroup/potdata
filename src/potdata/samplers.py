@@ -655,7 +655,7 @@ class KMeansStructureSampler(BaseStructureSampler):
         self.pool_method = pool_method
         self.pca_dim = pca_dim
         if isinstance(ratio, float) and not 0.0 < ratio < 1.0:
-            raise Value(f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}.")
+            raise ValueError(f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}.")
         self.ratio = ratio
         self.seed = seed
 
