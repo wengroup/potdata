@@ -43,9 +43,7 @@ class BaseSampler(MSONable):
     @property
     @abc.abstractmethod
     def indices(self) -> list[int]:
-        """
-        Return the indices of the data that has been sampled.
-        """
+        """Return the indices of the data that has been sampled."""
 
 
 class BaseStructureSampler(MSONable):
@@ -533,22 +531,27 @@ class DBSCANStructureSampler(BaseStructureSampler):
         if show:
             plt.show()
 
-    def plot2(self, separation1: int, separation2: int, show: bool = False,
-              plot_only_sampled: bool = True,
-              figname: str = "Transition_sample.pdf"):
+    def plot2(
+        self,
+        separation1: int,
+        separation2: int,
+        show: bool = False,
+        plot_only_sampled: bool = True,
+        figname: str = "Transition_sample.pdf",
+    ):
         """Function to plot the results of the transition, which composes of groups 1 (before transition),
            group 2 (during transition) and group 3 (after transition). Free to add more groups if needed.
 
            How to calculate the separation index:
-           
+
            Separation index = ((Specific transition step - SliceSampler.start) / SliceSampler.step) + 1
-           
+
            Specific transition step (int): The specific step at which the transition of interest occurs.
            SliceSampler.start (int): The starting step for the SliceSampling process.
            SliceSampler.step (int): The step size used for SliceSampling.
-           
-           Note: Don't forget to add one because the default numbering for steps starts from 1. 
-        
+
+           Note: Don't forget to add one because the default numbering for steps starts from 1.
+
         Args:
             separation1: The index marking the separation between groups 1 and 2.
             separation2: The index marking the separation between groups 2 and 3.
@@ -573,9 +576,19 @@ class DBSCANStructureSampler(BaseStructureSampler):
             soap_vectors = self._soap_vectors
 
         if plot_only_sampled:
-            group1 = np.asarray([soap_vectors[i] for i in self._indices if i < separation1])
-            group2 = np.asarray([soap_vectors[i] for i in self._indices if separation1 < i < separation2])
-            group3 = np.asarray([soap_vectors[i] for i in self._indices if i > separation2])
+            group1 = np.asarray(
+                [soap_vectors[i] for i in self._indices if i < separation1]
+            )
+            group2 = np.asarray(
+                [
+                    soap_vectors[i]
+                    for i in self._indices
+                    if separation1 < i < separation2
+                ]
+            )
+            group3 = np.asarray(
+                [soap_vectors[i] for i in self._indices if i > separation2]
+            )
         else:
             # soap vectors of sampled points
             group1 = soap_vectors[:separation1]  # Before transition
@@ -617,6 +630,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
         if show:
             plt.show()
 
+
 class KMeansStructureSampler(BaseStructureSampler):
     """Sample structures using KMeans clustering.
 
@@ -655,7 +669,9 @@ class KMeansStructureSampler(BaseStructureSampler):
         self.pool_method = pool_method
         self.pca_dim = pca_dim
         if isinstance(ratio, float) and not 0.0 < ratio < 1.0:
-            raise ValueError(f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}.")
+            raise ValueError(
+                f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}."
+            )
         self.ratio = ratio
         self.seed = seed
 
@@ -739,7 +755,7 @@ class KMeansStructureSampler(BaseStructureSampler):
         soap = SOAP(species=species, **soap_kwargs)
         atoms = [AseAtomsAdaptor.get_atoms(structure) for structure in data]
         soap_vectors = list(soap.create(atoms))
-        
+
         return soap_vectors
 
     @staticmethod
@@ -807,13 +823,20 @@ class KMeansStructureSampler(BaseStructureSampler):
         unique_clusters = set(cluster_labels)
 
         selected_indices = []
-        selected_clusters = []
 
         for cluster in unique_clusters:
-            cluster_indices = [i for i, label in enumerate(cluster_labels) if label == cluster]
-            cluster_size = int(ratio * len(cluster_indices)) if isinstance(ratio, float) else int(ratio)
+            cluster_indices = [
+                i for i, label in enumerate(cluster_labels) if label == cluster
+            ]
+            cluster_size = (
+                int(ratio * len(cluster_indices))
+                if isinstance(ratio, float)
+                else int(ratio)
+            )
             cluster_size = min(cluster_size, len(cluster_indices))
-            selected_indices.extend(np.random.choice(cluster_indices, cluster_size, replace=False))
+            selected_indices.extend(
+                np.random.choice(cluster_indices, cluster_size, replace=False)
+            )
 
         selected_structures = [data[i] for i in selected_indices]
 
@@ -830,7 +853,9 @@ class KMeansStructureSampler(BaseStructureSampler):
         import matplotlib.pyplot as plt
 
         if self._soap_vectors is None:
-            raise RuntimeError("The `sample` method must be called before calling `plot`.")
+            raise RuntimeError(
+                "The `sample` method must be called before calling `plot`."
+            )
 
         # Note: It is highly possible that PCA reduced soap vectors have more than
         # 2 dimensions, for example, if the input `pca_dim` is a float number.
