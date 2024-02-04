@@ -4,11 +4,13 @@ structures.
 
 The transformations are similar to pymatgen.transformations.standard_transformations.
 """
+
 import abc
-from pathlib import Path
 from typing import Optional
+
 import numpy as np
 from monty.dev import requires
+from monty.serialization import dumpfn
 from pymatgen.analysis.elasticity import Strain
 from pymatgen.core.structure import Structure
 from pymatgen.core.tensors import symmetry_reduce
@@ -17,7 +19,7 @@ from pymatgen.transformations.standard_transformations import (
     DeformStructureTransformation,
 )
 from pymatgen.transformations.transformation_abc import AbstractTransformation
-import re
+
 try:
     import m3gnet
 except ImportError:
@@ -31,7 +33,7 @@ __all__ = [
     "StrainTransformation",
     "PerturbTransformation",
     "BaseMDTransformation",
-    "M3gnetMDTransformation"
+    "M3gnetMDTransformation",
     "ACEMDTransformation",
 ]
 
@@ -248,31 +250,7 @@ class PerturbTransformation(AbstractTransformation):
 class BaseMDTransformation(AbstractTransformation):
     """
     Perform a molecular dynamics simulation to get structures along the trajectory.
-
-    Args:
-        ensemble: ensemble for MD. Options are "nvt" and "npt".
-        temperature: temperature for MD, in K.
-        timestep: timestep for MD, in fs.
-        steps: number of MD steps.
     """
-
-    def __init__(
-        self,
-        ensemble: str = "nvt",
-        temperature: float = 300,
-        timestep: float = 1,
-        steps: int = 1000,
-        potential_filename: Path | str = 'output_potential.yaml',
-        potential_asi_filename: Path | str = 'output_potential.asi',
-        gamma_range: Optional[tuple[float, float]] = None,
-    ):
-        self.ensemble = ensemble
-        self.temperature = temperature
-        self.timestep = timestep
-        self.steps = steps
-        self.potential_filename = potential_filename
-        self.potential_asi_filename = potential_asi_filename
-        self.gamma_range = gamma_range
 
     def apply_transformation(self, structure: Structure) -> list[dict]:
         """
@@ -293,7 +271,7 @@ class BaseMDTransformation(AbstractTransformation):
             structure: Structure to run simulation on.
 
         Returns:
-            Trajectory object.
+            A list of structures from the trajectory.
         """
 
     @property
@@ -305,7 +283,30 @@ class BaseMDTransformation(AbstractTransformation):
 
 
 class M3gnetMDTransformation(BaseMDTransformation):
-    """Molecular dynamics transformation using m3gnet."""
+    """Molecular dynamics transformation using m3gnet.
+
+    Args:
+        ensemble: ensemble for MD. Options are "nvt" and "npt".
+        temperature: temperature for MD, in K.
+            timestep: timestep for MD, in fs.
+            steps: number of MD steps.
+        kwargs: Additional keyword arguments to pass to the MolecularDynamics class
+            of m3gnet.
+    """
+
+    def __init__(
+        self,
+        ensemble: str = "nvt",
+        temperature: float = 300,
+        timestep: float = 1,
+        steps: int = 1000,
+        **kwargs,
+    ):
+        self.ensemble = ensemble
+        self.temperature = temperature
+        self.timestep = timestep
+        self.steps = steps
+        self.kwargs = kwargs
 
     @requires(
         m3gnet,
@@ -317,7 +318,6 @@ class M3gnetMDTransformation(BaseMDTransformation):
         structure: Structure,
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
-        **kwargs,
     ) -> list[Structure]:
         from ase.io import Trajectory as Trajectory
         from m3gnet.models import MolecularDynamics
@@ -336,7 +336,7 @@ class M3gnetMDTransformation(BaseMDTransformation):
             timestep=self.timestep,
             trajectory=trajectory_filename,
             logfile=log_filename,
-            **kwargs,
+            **self.kwargs,
         )
 
         md.run(steps=self.steps)
@@ -346,27 +346,65 @@ class M3gnetMDTransformation(BaseMDTransformation):
 
         return structures
 
+
 class ACEMDTransformation(BaseMDTransformation):
-    """Molecular dynamics transformation using ACE.
+    """Molecular dynamics transformation using ACE potential.
+
+    This transformation runs a molecular dynamics simulation using the ACE potential
+    and return the structures along the trajectory. It also has to ability to select
+    a subset of the structures based on the extrapolation grade (gamma). See
+    `gamma_range` and `gamma_reduce` for more details.
 
     Args:
-        taut (float): time constant for Berendsen temperature coupling
-        loginterval (int): write to log file every interval steps
-        append_trajectory (bool): Whether to append to prev trajectory
-        gamma_value (γ): known as extrapolation grade, is often used to         
-        indicate a model's predictive power and how well the model fits
-        the training data. If γ is smaller than γselect, it implies no
-        active learning actions. If γ is between γselect and γbreak, it
-        indicates reliability for training set extension, and if γ is
-        larger than γbreak, it is risky and trigger termination of the
-        simulation. Usually, γselect equal to 2 and γbreak equal to 10,
-        which is the first and second float in gamma_range
-        max_gamma_value: look at the maximum gamma of each configuration,
-        we want to include an entire configuration for labeling, not
-        individual atoms. So, as long as the maximum gamma of a
-        configuration is large enough, we should include this configuration
-
+        temperature: temperature for MD, in K.
+        timestep: timestep for MD, in fs.
+        steps: number of MD steps.
+        taut: Time constant for Berendsen temperature coupling in ASE time units.
+        potential_filename: path to the potential file.
+        potential_asi_filename: path to the active set index file of the potential.
+        gamma_range: range of gamma values to select structures from. Each structure
+            has a structure-gamma, and only the structures with gamma values within this
+            range are selected. If `None`, all structures are returned.
+        gamma_reduce: method to reduce the gamma values. In fact, gamma values will be
+            calculated for each atom in the structure. To select the structure, we
+            obtain a structure-gamma value by reducing the atom-gamma values. This
+            parameter specifies how to reduce the atom-gamma values to obtain the
+            structure-gamma value. Options are "max" and "mean"; the former selects the
+            maximum value of atom-gamma as the structure-gamma, and the latter computes
+            the mean of the atom-gamma values as the structure-gamma. Default is "max".
+            This is ignored if `gamma_range` is `None`.
+        verbose: verbosity level. 0 (default) only save md trajectory and log file.
+            1: also save gamma values.
+        kwargs: Additional keyword arguments to pass to the NVTBerendsen class of ASE.
     """
+
+    def __init__(
+        self,
+        temperature: float = 300,
+        timestep: float = 1,
+        steps: int = 1000,
+        taut: float = None,
+        *,
+        potential_filename: str = "output_potential.yaml",
+        potential_asi_filename: str = "output_potential.asi",
+        gamma_range: Optional[tuple[float, float]] = None,
+        gamma_reduce: str = "max",
+        verbose: int = 0,
+        **kwargs,
+    ):
+        self.temperature = temperature
+        self.timestep = timestep
+        self.steps = steps
+        self.taut = taut
+
+        self.potential_filename = potential_filename
+        self.potential_asi_filename = potential_asi_filename
+        self.gamma_range = gamma_range
+        self.gamma_reduce = gamma_reduce
+
+        self.verbose = verbose
+
+        self.kwargs = kwargs
 
     @requires(
         pyace,
@@ -378,114 +416,84 @@ class ACEMDTransformation(BaseMDTransformation):
         structure: Structure,
         trajectory_filename: str = "md.traj",
         log_filename: str = "md.log",
-        timestep: float = 1.0,
-        taut: Optional[float] = None,
-        loginterval: int = 1,
-        append_trajectory: bool = False,
-        gamma_values_filename: str = 'gamma_values.txt',
     ) -> list[Structure]:
+        from ase import units
         from ase.io import Trajectory as Trajectory
         from ase.md.nvtberendsen import NVTBerendsen
-        from ase import units
-        from pymatgen.io.ase import AseAtomsAdaptor
         from pyace import PyACECalculator
+        from pymatgen.io.ase import AseAtomsAdaptor
 
         atoms = AseAtomsAdaptor.get_atoms(structure)
-        # Initialize ACE calculator
+
         calc = PyACECalculator(self.potential_filename)
         calc.set_active_set(self.potential_asi_filename)
         atoms.set_calculator(calc)
-        self.calc = calc
-        
-        taut = 100 * timestep * units.fs
 
-        self.dyn = NVTBerendsen(
+        if self.taut is None:
+            taut = 100 * self.timestep * units.fs
+        else:
+            taut = self.taut
+
+        dyn = NVTBerendsen(
             atoms,
-            timestep=timestep * units.fs,
+            timestep=self.timestep * units.fs,
             temperature_K=self.temperature,
             taut=taut,
             trajectory=trajectory_filename,
             logfile=log_filename,
-            loginterval=loginterval,
-            append_trajectory=append_trajectory,
+            **self.kwargs,
         )
-        self.dyn.run(self.steps)
-        
-        # Convert ASE trajectory to pymatgen structures
+        dyn.run(self.steps)
+
         ase_traj = Trajectory(trajectory_filename)
-        structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
-        # Save structures and gamma values to a file
-        with open(gamma_values_filename, 'w') as f:
-            for i, structure in enumerate(structures, start=0):
-                atoms = AseAtomsAdaptor.get_atoms(structure)
-                atoms.set_calculator(calc)
-                energy = atoms.get_potential_energy()
-                gamma = calc.results["gamma"]
-                f.write(f'Step {i}:\n Gamma value:\n {gamma},\n Energy: {energy}\n')
+        # no selection based on gamma
+        if self.gamma_range is None:
+            structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
+            return structures
 
-        # Calculate and save max gamma values per step
-        with open(gamma_values_filename, 'r') as file:
-            content = file.read()
+        selected = []
+        gamma_data = []
+        for i, atoms in enumerate(ase_traj):
+            atoms.set_calculator(calc)
+            atoms.get_potential_energy()
+            gamma_atoms = calc.results["gamma"]
 
-        matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
+            if self.gamma_reduce == "max":
+                gamma_structure = max(gamma_atoms)
+            elif self.gamma_reduce == "mean":
+                gamma_structure = np.mean(gamma_atoms)
+            else:
+                support = ["max", "mean"]
+                raise ValueError(
+                    f"Unknown gamma_reduce: {self.gamma_reduce}. "
+                    f"Supported are: {support}",
+                )
 
-        max_gamma_values_output_filename = 'max_gamma_values_per_step.txt'
-        with open(max_gamma_values_output_filename, 'w') as output_file:
-            for match in matches:
-                step = int(match[0])
-                gamma_values = [float(val) for val in match[1].split()]
-                max_gamma_value = max(gamma_values)
-                output_file.write(f"Step {step}:\n Gamma value:\n[{max_gamma_value}]\n")
+            if self.gamma_range[0] <= gamma_structure <= self.gamma_range[1]:
+                selected.append(AseAtomsAdaptor.get_structure(atoms))
 
-        # Calculate and save max gamma values between γselet and γbreak
-        if self.gamma_range:
-            selected_structures = []
-            with open(max_gamma_values_output_filename, 'r') as file:
-                content = file.read()
+            if self.verbose > 0:
+                gamma_data.append(
+                    {
+                        "index": i,
+                        "gamma_atoms": gamma_atoms.tolist(),
+                        "gamma_structure": gamma_structure.tolist(),
+                    }
+                )
 
-            matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
+        # check: do we have any structures within the gamma range?
+        if len(selected) == 0:
+            raise RuntimeError(
+                f"No structures found within the gamma range: {self.gamma_range}."
+            )
 
-            max_gamma_between_γselet_and_γbreak_output_filename = 'max_gamma_between_γselet_and_γbreak_steps.txt'
-            
-            with open(max_gamma_between_γselet_and_γbreak_output_filename, 'w') as output_file:
-                between_count = 0
-                for match in matches:
-                    step = int(match[0])
-                    max_gamma_value = float(match[1])
+        # save gamma data if requested
+        if self.verbose > 0:
+            dumpfn(gamma_data, "gamma_data.yaml")
 
-                    if self.gamma_range[0] <= max_gamma_value <= self.gamma_range[1]:
-                        selected_structures.append(structures[step])
-                        output_file.write(f"Step {step}: Max Gamma value between γselet and γbreak: {max_gamma_value}\n")
-                        between_count += 1
-                    else:
-                        output_file.write(f"Step {step}: Max Gamma value not between γselet and γbreak.\n")
+        return selected
 
-            print(f"Results saved to {max_gamma_values_output_filename}")
-            print(f"Results saved to {max_gamma_between_γselet_and_γbreak_output_filename}")
-            print(f"Total number of steps with Max Gamma values between γselet and γbreak: {between_count}")
-
-            # Update the return statement to return the selected structures
-            return selected_structures
-
-        # Return all structures if no gamma range is specified
-        return structures
-
-    def calculate_between_count(self) -> int:
-        """Calculate the between_count based on the saved gamma values file."""
-        # Assuming gamma values are saved in a file named 'gamma_values.txt'
-        with open('gamma_values.txt', 'r') as file:
-            content = file.read()
-
-        matches = re.findall(r'Step (\d+):[^[]+Gamma value:[^[]+\[([^\]]+)]', content, re.DOTALL)
-
-        between_count = 0
-        for match in matches:
-            max_gamma_value = max(map(float, match[1].split()))
-            if self.gamma_range[0] <= max_gamma_value <= self.gamma_range[1]:
-                between_count += 1
-
-        return between_count
 
 # TODO this is obsolete, need to be adapted
 # @dataclass

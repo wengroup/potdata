@@ -1,6 +1,7 @@
 """Example to parse fitting data from VASP and write to other formats, such at MTP,
 DeePMD, YAML, and ACE.
 """
+
 from pathlib import Path
 
 from potdata._typing import PathLike
