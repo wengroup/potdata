@@ -3,7 +3,7 @@
 import numpy as np
 from pymatgen.core import Structure
 
-from potdata.samplers import DBSCANStructureSampler, SliceSampler
+from potdata.samplers import KMeansStructureSampler, SliceSampler
 from potdata.transformations import M3gnetMDTransformation
 
 
@@ -32,18 +32,15 @@ def sample_md_trajectory():
     slice_sampler = SliceSampler(index=slice(200, None, 2))
     structures = slice_sampler.sample(structures)
 
-    # apply a DBSCAN sampler to further sample the structures
-    dbscan_sampler = DBSCANStructureSampler(
-        species_to_select=["Mg"],
-        pca_dim=2,
-        dbscan_kwargs={"eps": 20, "min_samples": 10},
-        core_ratio="auto",
-        reachable_ratio=0.2,
-        noisy_ratio=1.0,
+    # apply a KMeans sampler to further sample the structures
+    kmeans_sampler = KMeansStructureSampler(
+        kmeans_kwargs={"n_clusters": 10}, species_to_select=["Mg"], pca_dim=2, ratio=0.1
     )
-    structures = dbscan_sampler.sample(structures)
+    structures = kmeans_sampler.sample(structures)
 
-    dbscan_sampler.plot(show=True)
+    print(f"Number of structures: {len(structures)}")
+
+    kmeans_sampler.plot(show=True)
 
 
 if __name__ == "__main__":

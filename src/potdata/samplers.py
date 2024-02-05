@@ -20,7 +20,13 @@ try:
 except ImportError:
     SOAP = None
 
-__all__ = ["BaseSampler", "RandomSampler", "SliceSampler", "DBSCANStructureSampler"]
+__all__ = [
+    "BaseSampler",
+    "RandomSampler",
+    "SliceSampler",
+    "DBSCANStructureSampler",
+    "KMeansStructureSampler",
+]
 
 
 class BaseSampler(MSONable):
@@ -156,52 +162,41 @@ class SliceSampler(BaseSampler):
         return cls(index=index)
 
 
-class DBSCANStructureSampler(BaseStructureSampler):
-    """Sample structures using DBSCAN clustering.
+class BaseStructureSamplerWithSoap(BaseStructureSampler):
+    """Sample structures based on their SOAP vectors.
 
-    This is achieved in the below steps:
-    1. convert each structure to a list of SOAP vectors, one for each atom.
-    2. (Optional) select a subset of the SOAP vectors (e.g. only the vectors for the
-       atoms of specific types of species).
-    3. Pool the (selected) SOAP vectors for atoms in each structure into a single vector
-       to get a vector representation of each structure. The pooling is done by taking
-       the mean or by concatenating the vectors.
-    4. (Optional) reduce the dimension of the concatenated vectors using PCA.
-    5. use `sklearn.cluster.DBSCAN` to cluster the SOAP vectors. Each vector will be
-       clustered into one of the following categories: `core`, `reachable`, and `noisy`.
-    6. For each of the categories, randomly sample a subset of the structures.
+    This is typically achieved in the below steps:
+    1. get soap vectors for all atoms in each structure (one for each atom),
+        called atom-vectors
+    2. (Optional) select a subset of atom-vectors (e.g. only the vectors of atoms of
+        specific species type)
+    3. pool the (selected) atom-vectors for each structure into a single vector, called
+        structure-vector
+    4. (Optional) reduce the dimension of structure-vectors using PCA
+    5. sample the structures based on the structure-vectors using a clustering algorithm
+        (e.g. DBSCAN or KMeans)
+
+    This class implements steps 1-4, and thus is not meant to be used directly. Instead,
+    you should use one of its subclasses, such as `DBSCANStructureSampler` or
+    `KMeansStructureSampler`, which implement step 5 with a specific clustering
+    algorithm.
 
     Args:
-        soap_kwargs: arguments to pass to `dscribe.descriptors.SOAP`. Note, default
+         soap_kwargs: arguments to pass to `dscribe.descriptors.SOAP`. Note, default
             values are provided for some of the arguments, which you can override; see
             `DEFAULT_SOAP_KWARGS`. Also, the `species` argument is not needed, as it
             will be automatically inferred from the structures.
-        species_to_select: The species of the atoms for which the SOAP vectors will
-            be selected for clustering. If None, all atoms will be used.
-        pool_method: method to pool the SOAP vectors for atoms in each structure into a
-            single vector. Can be `mean` or `concatenate`.
+        species_to_select: The species of the atoms whose SOAP vectors will be selected
+            to obtain a structure-vector. If None, all atoms will be used.
+        pool_method: method to pool the (selected) atom-vectors for each structure into
+            a structure-vector. Can be `mean` or `concatenate`.
         pca_dim: dimension of the PCA to perform on the concatenated SOAP vectors. If
-            `None`, no PCA will be performed.
-        dbscan_kwargs: arguments to pass to `sklearn.cluster.DBSCAN`.
-        reachable_ratio: ratio of reachable data points to sample.
-            set to `n_avg_reachable/n_avg_core`, where `n_avg_reachable` is the average
-            number of neighbors of all reachable data points, and `n_avg_core` is the
-            average number of neighbors of all core data points.
-        noisy_ratio: ratio of noisy data points to sample.
-        core_ratio: ratio of core data points to sample. If `auto`, the ratio will be
-            calculated automatically, according to the formula:
-            `core_ratio = n_avg_reachable/n_avg_core`, where `n_avg_reachable` is the
-            average number of neighbors of all reachable data points, and `n_avg_core`
-            is the average number of neighbors of all core data points. Alternatively,
-            you can provide a float value for the ratio, e.g. `core_ratio=0.5` will
-            sample half of the core data points.
-        ratio: global ratio factor to be multiplied to the ratio of each category. This
-            is useful to control the total number of data points to sample.
-        seed: random seed for the sampling.
+            `None`, no PCA will be performed. If a float between 0 and 1 is provided, it
+            will be treated as the explained variance ratio. If an integer is provided,
+            it will be treated as the number of components to keep.
     """
 
     DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
-    DEFAULT_DBSCAN_KWARGS = {"eps": 0.5, "min_samples": 5}
 
     def __init__(
         self,
@@ -209,108 +204,62 @@ class DBSCANStructureSampler(BaseStructureSampler):
         species_to_select: list[str] | None = None,
         pool_method: str = "concatenate",
         pca_dim: int | None = None,
-        dbscan_kwargs: dict = None,
-        core_ratio: str | float = "auto",
-        noisy_ratio: float = 1.0,
-        reachable_ratio: float = 1.0,
-        ratio: float = 1.0,
-        seed: int = 35,
     ):
         self.soap_kwargs = self.DEFAULT_SOAP_KWARGS.copy()
         if soap_kwargs is not None:
             self.soap_kwargs.update(soap_kwargs)
 
-        self.dbscan_kwargs = self.DEFAULT_DBSCAN_KWARGS.copy()
-        if dbscan_kwargs is not None:
-            self.dbscan_kwargs.update(dbscan_kwargs)
-
         self.species_to_select = species_to_select
         self.pool_method = pool_method
         self.pca_dim = pca_dim
-        self.core_ratio = core_ratio
-        self.noisy_ratio = noisy_ratio
-        self.reachable_ratio = reachable_ratio
-        self.ratio = ratio
-        self.seed = seed
-
-        # indices of all sampled points and sampled core, reachable, and noisy points
-        self._indices: list[int] = None
-        self._core_indices: list[int] = None
-        self._reachable_indices: list[int] = None
-        self._noisy_indices: list[int] = None
 
         # soap vector of each structure
         self._soap_vectors = None
 
-        np.random.seed(self.seed)
+        self._indices: list[int] = None
 
     def sample(self, data: list[Structure]) -> list[Structure]:
         """Sample the structures."""
 
-        # soap vectors of all atoms for all structures
+        # 1. soap vectors of all atoms for all structures
         soap_vec_atoms = self._get_soap_vector_atom(data, self.soap_kwargs)
 
-        # select soap vectors for atoms of specific species
+        # 2. select soap vectors for atoms of specific species
         if self.species_to_select is not None:
             soap_vec_atoms = self._select_by_species(
                 data, soap_vec_atoms, self.species_to_select
             )
 
-        # soap vector of each structure, 2D array (n_structures, n_features)
+        # 3. soap vector of each structure, 2D array (n_structures, n_features)
         self._soap_vectors = self._get_soap_vector_structure(
             soap_vec_atoms, self.pool_method
         )
 
-        # dim reduction with PCA
+        # 4. dim reduction with PCA
         if self.pca_dim is not None:
             self._soap_vectors = self._dim_reduction(self._soap_vectors, self.pca_dim)
 
-        # classify soap vectors/structures into core, reachable, and noisy
-        core_idx, reachable_idx, noisy_idx = self._cluster(self._soap_vectors)
+        # 5. sample based on clusters
+        selected, indices = self.cluster_and_sample(data, self._soap_vectors)
 
-        if isinstance(self.core_ratio, str):
-            if self.core_ratio.lower() == "auto":
-                core_ratio = self._estimate_core_ratio(
-                    self._soap_vectors,
-                    core_idx,
-                    reachable_idx,
-                    radius=self.dbscan_kwargs["eps"],
-                )
-            else:
-                raise ValueError(
-                    f"Unsupported core_ratio `{self.core_ratio}`. Expected either "
-                    "`auto` or a float."
-                )
-        else:
-            core_ratio = self.core_ratio
+        self._indices = indices
 
-        # sample soap vectors/structures
-        print("DBSCAN sampler:")
-        print("Total number of data points:", len(data))
+        return selected
 
-        self._core_indices, core = self._select(data, core_idx, core_ratio * self.ratio)
-        print(f"Sampled {len(core)} out of {len(core_idx)} core points.")
+    @abc.abstractmethod
+    def cluster_and_sample(
+        self, data: list[Structure], soap_vectors: np.ndarray
+    ) -> tuple[list[Structure], list[int]]:
+        """Perform clustering and then sample the structures.
 
-        self._reachable_indices, reachable = self._select(
-            data, reachable_idx, self.reachable_ratio * self.ratio
-        )
-        print(f"Sampled {len(reachable)} out of {len(reachable_idx)} reachable points.")
+        Args:
+            data: list of structures.
+            soap_vectors: SOAP vectors of the structures.
 
-        self._noisy_indices, noisy = self._select(
-            data, noisy_idx, self.noisy_ratio * self.ratio
-        )
-        print(f"Sampled {len(noisy)} out of {len(noisy_idx)} noisy points.")
-
-        sampled_structures = core + reachable + noisy
-        self._indices = (
-            self._core_indices + self._reachable_indices + self._noisy_indices
-        )
-
-        return sampled_structures
-
-    @property
-    def indices(self) -> list[int]:
-        return self._indices
+        Returns:
+            sampled_structures: A list of sampled structures and their indices.
+            sampled_indices: Indices of the sampled structures.
+        """
 
     @requires(
         SOAP,
@@ -363,7 +312,7 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
     @staticmethod
     def _get_soap_vector_structure(vectors: list[np.ndarray], pool: str) -> np.ndarray:
-        """Convert SOAP vectors of atoms to SOAP vectors of structures.
+        """Pool SOAP vectors of atoms to get SOAP vectors of structures.
 
         Return a 2D array of shape (n_structures, n_features).
         """
@@ -385,12 +334,120 @@ class DBSCANStructureSampler(BaseStructureSampler):
 
         return reduced
 
+
+class DBSCANStructureSampler(BaseStructureSamplerWithSoap):
+    """Sample structures using SOAP and DBSCAN clustering.
+
+    See `BaseStructureSamplerWithSoap` for details on some of the arguments.
+
+    Args:
+        dbscan_kwargs: arguments to pass to `sklearn.cluster_and_sample.DBSCAN`.
+        reachable_ratio: ratio of reachable data points to sample.
+            set to `n_avg_reachable/n_avg_core`, where `n_avg_reachable` is the average
+            number of neighbors of all reachable data points, and `n_avg_core` is the
+            average number of neighbors of all core data points.
+        noisy_ratio: ratio of noisy data points to sample.
+        core_ratio: ratio of core data points to sample. If `auto`, the ratio will be
+            calculated automatically, according to the formula:
+            `core_ratio = n_avg_reachable/n_avg_core`, where `n_avg_reachable` is the
+            average number of neighbors of all reachable data points, and `n_avg_core`
+            is the average number of neighbors of all core data points. Alternatively,
+            you can provide a float value for the ratio, e.g. `core_ratio=0.5` will
+            sample half of the core data points.
+        ratio: global ratio factor to be multiplied to the ratio of each category. This
+            is useful to control the total number of data points to sample.
+        seed: random seed for the sampling.
+    """
+
+    DEFAULT_DBSCAN_KWARGS = {"eps": 0.5, "min_samples": 5}
+
+    def __init__(
+        self,
+        soap_kwargs: dict = None,
+        species_to_select: list[str] | None = None,
+        pool_method: str = "concatenate",
+        pca_dim: int | None = None,
+        dbscan_kwargs: dict = None,
+        core_ratio: str | float = "auto",
+        noisy_ratio: float = 1.0,
+        reachable_ratio: float = 1.0,
+        ratio: float = 1.0,
+        seed: int = 35,
+    ):
+        super().__init__(soap_kwargs, species_to_select, pool_method, pca_dim)
+
+        self.dbscan_kwargs = self.DEFAULT_DBSCAN_KWARGS.copy()
+        if dbscan_kwargs is not None:
+            self.dbscan_kwargs.update(dbscan_kwargs)
+
+        self.core_ratio = core_ratio
+        self.noisy_ratio = noisy_ratio
+        self.reachable_ratio = reachable_ratio
+        self.ratio = ratio
+        self.seed = seed
+
+        # indices of all sampled points and sampled core, reachable, and noisy points
+        self._core_indices: list[int] = None
+        self._reachable_indices: list[int] = None
+        self._noisy_indices: list[int] = None
+
+        np.random.seed(self.seed)
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
+
+    def cluster_and_sample(
+        self, data: list[Structure], soap_vectors: np.ndarray
+    ) -> tuple[list[Structure], list[int]]:
+        # classify soap vectors/structures into core, reachable, and noisy
+        core_idx, reachable_idx, noisy_idx = self._cluster(soap_vectors)
+
+        if isinstance(self.core_ratio, str):
+            if self.core_ratio.lower() == "auto":
+                core_ratio = self._estimate_core_ratio(
+                    self._soap_vectors,
+                    core_idx,
+                    reachable_idx,
+                    radius=self.dbscan_kwargs["eps"],
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported core_ratio `{self.core_ratio}`. Expected either "
+                    "`auto` or a float."
+                )
+        else:
+            core_ratio = self.core_ratio
+
+        # sample soap vectors/structures
+        print("DBSCAN sampler:")
+        print("Total number of data points:", len(data))
+
+        self._core_indices, core = self._select(data, core_idx, core_ratio * self.ratio)
+        print(f"Sampled {len(core)} out of {len(core_idx)} core points.")
+
+        self._reachable_indices, reachable = self._select(
+            data, reachable_idx, self.reachable_ratio * self.ratio
+        )
+        print(f"Sampled {len(reachable)} out of {len(reachable_idx)} reachable points.")
+
+        self._noisy_indices, noisy = self._select(
+            data, noisy_idx, self.noisy_ratio * self.ratio
+        )
+        print(f"Sampled {len(noisy)} out of {len(noisy_idx)} noisy points.")
+
+        sampled_structures = core + reachable + noisy
+        indices = self._core_indices + self._reachable_indices + self._noisy_indices
+
+        return sampled_structures, indices
+
     def _cluster(self, data: np.ndarray) -> tuple[list[int], list[int], list[int]]:
         """
         Perform DBSCAN and classify the data points into core, reachable and noisy ones.
         """
 
-        clustering = DBSCAN(**self.dbscan_kwargs).fit(data)
+        clustering = DBSCAN(**self.dbscan_kwargs)
+        clustering.fit(data)
 
         # get core, reachable and noisy points
         labels = clustering.labels_
@@ -632,20 +689,24 @@ class DBSCANStructureSampler(BaseStructureSampler):
             plt.show()
 
 
-class KMeansStructureSampler(BaseStructureSampler):
-    """Sample structures using KMeans clustering.
+class KMeansStructureSampler(BaseStructureSamplerWithSoap):
+    """Sample structures using SOAP vectors and KMeans clustering.
+
+    This performs KMeans clustering based on the SOAP vectors of the structures, and
+    then sample a subset of the structures from each cluster.
+
+    See `BaseStructureSamplerWithSoap` for details on some of the arguments.
 
     Args:
-        kmeans_kwargs: Arguments to pass to `sklearn.cluster.KMeans`. You should
-            provide the `n_clusters` argument to specify the number of clusters.
-        ratio: Sampling ratio. If an integer is provided, a fixed number of samples
+        kmeans_kwargs: Arguments to pass to `sklearn.cluster_and_sample.KMeans`.
+            You should provide the `n_clusters` argument to specify the number of
+            clusters.
+        ratio: Sampling ratio. This determines the number of structures to sample from
+            each cluster. If an integer is provided, a fixed number of samples
             is chosen from each cluster. If a float between 0 and 1 is provided, a
             fraction of samples is chosen from each cluster.
-        Refer to `DBSCANSampler` for details on soap_kwargs, species_to_select,
-            pca_dim and seed.
     """
 
-    DEFAULT_SOAP_KWARGS = {"r_cut": 5.0, "n_max": 8, "l_max": 5, "periodic": True}
     DEFAULT_KMEANS_KWARGS = {"n_clusters": 8}
 
     def __init__(
@@ -658,20 +719,16 @@ class KMeansStructureSampler(BaseStructureSampler):
         ratio: int | float = 1,
         seed: int = 35,
     ):
-        self.soap_kwargs = self.DEFAULT_SOAP_KWARGS.copy()
-        if soap_kwargs is not None:
-            self.soap_kwargs.update(soap_kwargs)
+        super().__init__(soap_kwargs, species_to_select, pool_method, pca_dim)
 
         self.kmeans_kwargs = self.DEFAULT_KMEANS_KWARGS.copy()
         if kmeans_kwargs is not None:
             self.kmeans_kwargs.update(kmeans_kwargs)
 
-        self.species_to_select = species_to_select
-        self.pool_method = pool_method
-        self.pca_dim = pca_dim
         if isinstance(ratio, float) and not 0.0 < ratio < 1.0:
             raise ValueError(
-                f"Expect ratio to be an integer or a float between 0.0 and 1.0. Got {ratio}."
+                f"Expect ratio to be an integer or a float between 0.0 and 1.0. "
+                f"Got {ratio}."
             )
         self.ratio = ratio
         self.seed = seed
@@ -680,131 +737,14 @@ class KMeansStructureSampler(BaseStructureSampler):
         self._indices: list[int] = None
         self._cluster_indices: list[int] = None
 
-        # SOAP vector of each structure
-        self._soap_vectors = None
-
         np.random.seed(self.seed)
 
-    def sample(self, data: list[Structure]) -> list[Structure]:
-        """Sample the structures using KMeans clustering."""
-
-        # Soap vectors of all atoms for all structures
-        soap_vec_atoms = self._get_soap_vector_atom(data, self.soap_kwargs)
-
-        # select soap vectors for atoms of specific species
-        if self.species_to_select is not None:
-            soap_vec_atoms = self._select_by_species(
-                data, soap_vec_atoms, self.species_to_select
-            )
-
-        # Soap vector of each structure, 2D array (n_structures, n_features)
-        self._soap_vectors = self._get_soap_vector_structure(
-            soap_vec_atoms, self.pool_method
-        )
-
-        # Dimension reduction with PCA
-        if self.pca_dim is not None:
-            self._soap_vectors = self._dim_reduction(self._soap_vectors, self.pca_dim)
-
-        # Classify soap vectors/structures into clusters
-        cluster_idx = self._cluster_kmeans(self._soap_vectors)
-
-        # Sample soap vectors/structures
-        print("KMeans sampler:")
-        print("Total number of data points:", len(data))
-
-        self._cluster_indices, sampled_clusters = self._select_kmeans(
-            data, cluster_idx, self.ratio
-        )
-        print(f"Sampled {len(sampled_clusters)} out of {len(cluster_idx)} clusters.")
-
-        self._indices = self._cluster_indices
-
-        return sampled_clusters
-
-    @property
-    def indices(self) -> list[int]:
-        return self._indices
-
-    @requires(
-        SOAP,
-        "`dscribe` is required to use the sampler. To install it, see "
-        "https://github.com/SINGROUP/dscribe",
-    )
-    # This can be a staticmethod; not use because @requires does not work with it
-    def _get_soap_vector_atom(
-        self, data: list[Structure], soap_kwargs: dict
-    ) -> list[np.ndarray]:
-        """Convert structures to SOAP vectors of all atoms.
-
-        Returns:
-            SOAP vectors for all structures. For each structure, the SOAP vectors is a
-            2D array of shape (n_atoms, n_features), where n_atoms is the number of
-            atoms and n_features is the number of features in the SOAP vector.
-        """
-
-        species = set()
-        for structure in data:
-            species.update(structure.symbol_set)
-
-        if "species" in soap_kwargs:
-            raise ValueError(
-                "The `species` argument in `soap_kwargs` is not allowed. "
-                "The species will be automatically determined from the structures."
-            )
-
-        soap = SOAP(species=species, **soap_kwargs)
-        atoms = [AseAtomsAdaptor.get_atoms(structure) for structure in data]
-        soap_vectors = list(soap.create(atoms))
-
-        return soap_vectors
-
-    @staticmethod
-    def _select_by_species(
-        structures: list[Structure], vectors: list[np.ndarray], species: list[str]
-    ) -> list[np.ndarray]:
-        """Select SOAP vectors for atoms of specific species."""
-
-        def select_one(struct, vec):
-            indices = [i for i, s in enumerate(struct.species) if s.symbol in species]
-            return vec[indices]
-
-        selected = []
-        for struct, vec in zip(structures, vectors):
-            selected.append(select_one(struct, vec))
-
-        return selected
-
-    @staticmethod
-    def _get_soap_vector_structure(vectors: list[np.ndarray], pool: str) -> np.ndarray:
-        """Convert SOAP vectors of atoms to SOAP vectors of structures.
-
-        Return a 2D array of shape (n_structures, n_features).
-        """
-        if pool.lower() == "mean":
-            return np.asarray([np.mean(x, axis=0) for x in vectors])
-        elif pool.lower() == "concatenate":
-            return np.asarray([np.ravel(x) for x in vectors])
-        else:
-            supported = ["mean", "concatenate"]
-            raise ValueError(
-                f"Unsupported pooling method `{pool}`. Expected one of " f"{supported}."
-            )
-
-    @staticmethod
-    def _dim_reduction(x: np.ndarray, dim: int | float):
-        """Perform dimension reduction on a 2D array."""
-        pca = PCA(n_components=dim)
-        reduced = pca.fit_transform(x)
-
-        return reduced
-
-    def _cluster_kmeans(self, data: np.ndarray) -> list[int]:
-        """
-        Perform KMeans clustering and return cluster labels.
-        """
-
-        clustering = KMeans(**self.kmeans_kwargs).fit(data)
+    def cluster_and_sample(
+        self, data: list[Structure], soap_vectors: np.ndarray
+    ) -> tuple[list[Structure], list[int]]:
+        # Perform KMeans clustering and get the cluster labels
+        clustering = KMeans(**self.kmeans_kwargs)
+        clustering.fit(soap_vectors)
         labels = clustering.labels_
 
         unique_clusters = set(labels)
@@ -815,41 +755,42 @@ class KMeansStructureSampler(BaseStructureSampler):
                 "Consider adjusting the parameters of KMeans."
             )
 
-        return labels
-
-    def _select_kmeans(
-        self, data: list[Structure], cluster_labels: list[int], ratio: float
-    ) -> tuple[list[int], list[Structure]]:
-        """Select a subset of structures and indices for KMeans."""
-        unique_clusters = set(cluster_labels)
-
+        # Sample structures from each cluster
         selected_indices = []
-
         for cluster in unique_clusters:
-            cluster_indices = [
-                i for i, label in enumerate(cluster_labels) if label == cluster
-            ]
+            cluster_indices = [i for i, label in enumerate(labels) if label == cluster]
             cluster_size = (
-                int(ratio * len(cluster_indices))
-                if isinstance(ratio, float)
-                else int(ratio)
+                int(self.ratio * len(cluster_indices))
+                if isinstance(self.ratio, float)
+                else int(self.ratio)
             )
-            cluster_size = min(cluster_size, len(cluster_indices))
+
+            if cluster_size > len(cluster_indices):
+                warnings.warn(
+                    f"Requested number of samples `{cluster_size}` larger than total "
+                    f"number of data points `{len(cluster_indices)}` in cluster "
+                    f"{cluster}. Selecting all data points in the cluster."
+                )
+                cluster_size = len(cluster_indices)
+
             selected_indices.extend(
                 np.random.choice(cluster_indices, cluster_size, replace=False)
             )
 
         selected_structures = [data[i] for i in selected_indices]
 
-        return selected_indices, selected_structures
+        return selected_structures, selected_indices
+
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
 
     def plot(self, show: bool = False, figname: str = "kmeans_sample.pdf"):
-        """Function to plot the results of the KMeans clustering.
+        """Plot the results of the KMeans clustering.
 
         Args:
             show: Whether to show the plot.
             figname: Name of the figure file to save.
-
         """
         import matplotlib.pyplot as plt
 
