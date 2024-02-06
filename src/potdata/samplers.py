@@ -7,6 +7,7 @@ from typing import Any, Sequence
 import numpy as np
 from monty.dev import requires
 from monty.json import MSONable
+from monty.serialization import dumpfn
 from pymatgen.core.structure import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
 from sklearn.cluster import DBSCAN, KMeans
@@ -20,12 +21,18 @@ try:
 except ImportError:
     SOAP = None
 
+try:
+    import pyace
+except ImportError:
+    pyace = None
+
 __all__ = [
     "BaseSampler",
     "RandomSampler",
     "SliceSampler",
     "DBSCANStructureSampler",
     "KMeansStructureSampler",
+    "ACEGammaSampler",
 ]
 
 
@@ -246,6 +253,10 @@ class BaseStructureSamplerWithSoap(BaseStructureSampler):
 
         return selected
 
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
+
     @abc.abstractmethod
     def cluster_and_sample(
         self, data: list[Structure], soap_vectors: np.ndarray
@@ -392,10 +403,6 @@ class DBSCANStructureSampler(BaseStructureSamplerWithSoap):
         self._noisy_indices: list[int] = None
 
         np.random.seed(self.seed)
-
-    @property
-    def indices(self) -> list[int]:
-        return self._indices
 
     def cluster_and_sample(
         self, data: list[Structure], soap_vectors: np.ndarray
@@ -781,10 +788,6 @@ class KMeansStructureSampler(BaseStructureSamplerWithSoap):
 
         return selected_structures, selected_indices
 
-    @property
-    def indices(self) -> list[int]:
-        return self._indices
-
     def plot(self, show: bool = False, figname: str = "kmeans_sample.pdf"):
         """Plot the results of the KMeans clustering.
 
@@ -831,3 +834,99 @@ class KMeansStructureSampler(BaseStructureSamplerWithSoap):
 
         if show:
             plt.show()
+
+
+class ACEGammaSampler(BaseStructureSampler):
+    """
+    Sample structures based on the extrapolation grade (gamma) from ACE potential.
+
+    Args:
+        gamma_range: range of gamma values to select structures from. Each structure
+            has a structure-gamma, and only the structures with gamma values within this
+            range are selected. If `None`, all structures are returned.
+        gamma_reduce: method to reduce the gamma values. In fact, gamma values will be
+            calculated for each atom in the structure. To select the structure, we
+            obtain a structure-gamma value by reducing the atom-gamma values. This
+            parameter specifies how to reduce the atom-gamma values to obtain the
+            structure-gamma value. Options are "max" and "mean"; the former selects the
+            maximum value of atom-gamma as the structure-gamma, and the latter computes
+            the mean of the atom-gamma values as the structure-gamma. Default is "max".
+            This is ignored if `gamma_range` is `None`.
+        verbose: verbosity level. 0 (default) only save md trajectory and log file.
+            1: also save gamma values.
+    """
+
+    def __init__(
+        self,
+        potential_filename: str = "output_potential.yaml",
+        potential_asi_filename: str = "output_potential.asi",
+        gamma_range: tuple[float, float] = None,
+        gamma_reduce: str = "max",
+        verbose: int = 0,
+    ):
+        self.potential_filename = potential_filename
+        self.potential_asi_filename = potential_asi_filename
+        self.gamma_range = gamma_range
+        self.gamma_reduce = gamma_reduce
+        self.verbose = verbose
+
+        self._indices: list[int] = None
+
+    @requires(
+        pyace,
+        "`ACE` is needed for this transformation. To install it, see "
+        "https://pacemaker.readthedocs.io/en/latest/",
+    )
+    def sample(self, data: list[Structure]) -> list[Structure]:
+        from pyace import PyACECalculator
+        from pymatgen.io.ase import AseAtomsAdaptor
+
+        calc = PyACECalculator(self.potential_filename)
+        calc.set_active_set(self.potential_asi_filename)
+
+        selected = []
+        selected_indices = []
+        gamma_data = []
+        for i, s in enumerate(data):
+            atoms = AseAtomsAdaptor.get_atoms(s)
+            atoms.set_calculator(calc)
+            atoms.get_potential_energy()
+            gamma_atoms = calc.results["gamma"]
+
+            if self.gamma_reduce == "max":
+                gamma_structure = max(gamma_atoms)
+            elif self.gamma_reduce == "mean":
+                gamma_structure = np.mean(gamma_atoms)
+            else:
+                support = ["max", "mean"]
+                raise ValueError(
+                    f"Unknown gamma_reduce: {self.gamma_reduce}. "
+                    f"Supported are: {support}",
+                )
+
+            if self.gamma_range[0] <= gamma_structure <= self.gamma_range[1]:
+                selected.append(AseAtomsAdaptor.get_structure(atoms))
+                selected_indices.append(i)
+
+            if self.verbose > 0:
+                gamma_data.append(
+                    {
+                        "index": i,
+                        "gamma_atoms": gamma_atoms.tolist(),
+                        "gamma_structure": gamma_structure.tolist(),
+                    }
+                )
+
+        # check: do we have any structures within the gamma range?
+        if len(selected) == 0:
+            raise RuntimeError(
+                f"No structures found within the gamma range: {self.gamma_range}."
+            )
+
+        # save gamma data if requested
+        if self.verbose > 0:
+            dumpfn(gamma_data, "gamma_data.yaml")
+
+        self._indices = selected_indices
+
+        return selected
