@@ -6,11 +6,9 @@ The transformations are similar to pymatgen.transformations.standard_transformat
 """
 
 import abc
-from typing import Optional
 
 import numpy as np
 from monty.dev import requires
-from monty.serialization import dumpfn
 from pymatgen.analysis.elasticity import Strain
 from pymatgen.core.structure import Structure
 from pymatgen.core.tensors import symmetry_reduce
@@ -338,10 +336,9 @@ class M3gnetMDTransformation(BaseMDTransformation):
             logfile=log_filename,
             **self.kwargs,
         )
-
         md.run(steps=self.steps)
-        ase_traj = Trajectory(trajectory_filename)
 
+        ase_traj = Trajectory(trajectory_filename)
         structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
         return structures
@@ -351,9 +348,7 @@ class ACEMDTransformation(BaseMDTransformation):
     """Molecular dynamics transformation using ACE potential.
 
     This transformation runs a molecular dynamics simulation using the ACE potential
-    and return the structures along the trajectory. It also has to ability to select
-    a subset of the structures based on the extrapolation grade (gamma). See
-    `gamma_range` and `gamma_reduce` for more details.
+    and return the structures along the trajectory.
 
     Args:
         temperature: temperature for MD, in K.
@@ -362,19 +357,6 @@ class ACEMDTransformation(BaseMDTransformation):
         taut: Time constant for Berendsen temperature coupling in ASE time units.
         potential_filename: path to the potential file.
         potential_asi_filename: path to the active set index file of the potential.
-        gamma_range: range of gamma values to select structures from. Each structure
-            has a structure-gamma, and only the structures with gamma values within this
-            range are selected. If `None`, all structures are returned.
-        gamma_reduce: method to reduce the gamma values. In fact, gamma values will be
-            calculated for each atom in the structure. To select the structure, we
-            obtain a structure-gamma value by reducing the atom-gamma values. This
-            parameter specifies how to reduce the atom-gamma values to obtain the
-            structure-gamma value. Options are "max" and "mean"; the former selects the
-            maximum value of atom-gamma as the structure-gamma, and the latter computes
-            the mean of the atom-gamma values as the structure-gamma. Default is "max".
-            This is ignored if `gamma_range` is `None`.
-        verbose: verbosity level. 0 (default) only save md trajectory and log file.
-            1: also save gamma values.
         kwargs: Additional keyword arguments to pass to the NVTBerendsen class of ASE.
     """
 
@@ -384,12 +366,8 @@ class ACEMDTransformation(BaseMDTransformation):
         timestep: float = 1,
         steps: int = 1000,
         taut: float = None,
-        *,
         potential_filename: str = "output_potential.yaml",
         potential_asi_filename: str = "output_potential.asi",
-        gamma_range: Optional[tuple[float, float]] = None,
-        gamma_reduce: str = "max",
-        verbose: int = 0,
         **kwargs,
     ):
         self.temperature = temperature
@@ -399,10 +377,6 @@ class ACEMDTransformation(BaseMDTransformation):
 
         self.potential_filename = potential_filename
         self.potential_asi_filename = potential_asi_filename
-        self.gamma_range = gamma_range
-        self.gamma_reduce = gamma_reduce
-
-        self.verbose = verbose
 
         self.kwargs = kwargs
 
@@ -423,10 +397,10 @@ class ACEMDTransformation(BaseMDTransformation):
         from pyace import PyACECalculator
         from pymatgen.io.ase import AseAtomsAdaptor
 
-        atoms = AseAtomsAdaptor.get_atoms(structure)
-
         calc = PyACECalculator(self.potential_filename)
         calc.set_active_set(self.potential_asi_filename)
+
+        atoms = AseAtomsAdaptor.get_atoms(structure)
         atoms.set_calculator(calc)
 
         if self.taut is None:
@@ -434,7 +408,7 @@ class ACEMDTransformation(BaseMDTransformation):
         else:
             taut = self.taut
 
-        dyn = NVTBerendsen(
+        md = NVTBerendsen(
             atoms,
             timestep=self.timestep * units.fs,
             temperature_K=self.temperature,
@@ -443,56 +417,12 @@ class ACEMDTransformation(BaseMDTransformation):
             logfile=log_filename,
             **self.kwargs,
         )
-        dyn.run(self.steps)
+        md.run(self.steps)
 
         ase_traj = Trajectory(trajectory_filename)
+        structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
 
-        # no selection based on gamma
-        if self.gamma_range is None:
-            structures = [AseAtomsAdaptor.get_structure(atoms) for atoms in ase_traj]
-            return structures
-
-        selected = []
-        gamma_data = []
-        for i, atoms in enumerate(ase_traj):
-            atoms.set_calculator(calc)
-            atoms.get_potential_energy()
-            gamma_atoms = calc.results["gamma"]
-
-            if self.gamma_reduce == "max":
-                gamma_structure = max(gamma_atoms)
-            elif self.gamma_reduce == "mean":
-                gamma_structure = np.mean(gamma_atoms)
-            else:
-                support = ["max", "mean"]
-                raise ValueError(
-                    f"Unknown gamma_reduce: {self.gamma_reduce}. "
-                    f"Supported are: {support}",
-                )
-
-            if self.gamma_range[0] <= gamma_structure <= self.gamma_range[1]:
-                selected.append(AseAtomsAdaptor.get_structure(atoms))
-
-            if self.verbose > 0:
-                gamma_data.append(
-                    {
-                        "index": i,
-                        "gamma_atoms": gamma_atoms.tolist(),
-                        "gamma_structure": gamma_structure.tolist(),
-                    }
-                )
-
-        # check: do we have any structures within the gamma range?
-        if len(selected) == 0:
-            raise RuntimeError(
-                f"No structures found within the gamma range: {self.gamma_range}."
-            )
-
-        # save gamma data if requested
-        if self.verbose > 0:
-            dumpfn(gamma_data, "gamma_data.yaml")
-
-        return selected
+        return structures
 
 
 # TODO this is obsolete, need to be adapted

@@ -1,10 +1,13 @@
 """Example to sample structures from an MD trajectory."""
 
+from pathlib import Path
+
 import numpy as np
 from pymatgen.core import Structure
+from pymatgen.io.vasp import Poscar
 
-from potdata.samplers import KMeansStructureSampler, SliceSampler
-from potdata.transformations import M3gnetMDTransformation
+from potdata.samplers import ACEGammaSampler, KMeansStructureSampler, SliceSampler
+from potdata.transformations import ACEMDTransformation, M3gnetMDTransformation
 
 
 def get_structure():
@@ -43,5 +46,31 @@ def sample_md_trajectory():
     kmeans_sampler.plot(show=True)
 
 
+def sample_md_trajectory_2(structure, potential, active_set):
+    """Run MD using ACE and then sample with ACEGammaSampler."""
+    transformation = ACEMDTransformation(
+        steps=1000, potential_filename=potential, potential_asi_filename=active_set
+    )
+    data = transformation.apply_transformation(structure)
+    structures = [d["structure"] for d in data]
+
+    sampler = ACEGammaSampler(
+        potential_filename=potential,
+        potential_asi_filename=active_set,
+        gamma_range=(0.5, 0.9),
+        gamma_reduce="max",
+        verbose=1,
+    )
+
+    structures = sampler.sample(structures)
+    print(f"Number of structures: {len(structures)}")
+
+
 if __name__ == "__main__":
     sample_md_trajectory()
+
+    path = Path("~/Downloads/CONTCAR").expanduser()
+    s = Poscar.from_file(path).structure
+    potential = Path("~/Downloads/output_potential.yaml").expanduser().as_posix()
+    active_set = Path("~/Downloads/output_potential.asi").expanduser().as_posix()
+    sample_md_trajectory_2(s, potential, active_set)
