@@ -872,6 +872,10 @@ class ACEGammaSampler(BaseStructureSampler):
 
         self._indices: list[int] = None
 
+    @property
+    def indices(self) -> list[int]:
+        return self._indices
+
     @requires(
         pyace,
         "`ACE` is needed for this transformation. To install it, see "

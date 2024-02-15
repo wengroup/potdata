@@ -64,6 +64,7 @@ def sample_md_trajectory_2(structure, potential, active_set):
 
     structures = sampler.sample(structures)
     print(f"Number of structures: {len(structures)}")
+    print(f"Sampled indices: {sampler.indices}")
 
 
 if __name__ == "__main__":
