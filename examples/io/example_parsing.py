@@ -7,6 +7,7 @@ from pathlib import Path
 from potdata._typing import PathLike
 from potdata.io.adaptor import (
     DeepmdCollectionAdaptor,
+    ExtxyzCollectionAdaptor,
     MTPCollectionAdaptor,
     VasprunCollectionAdaptor,
     YAMLCollectionAdaptor,
@@ -98,9 +99,35 @@ def vasprun_to_deepmd(
     )
 
 
+def vasprun_to_xyz(
+    input_path: PathLike,
+    output_path: PathLike,
+    reference_energy: dict[str, float] = None,
+):
+    """Convert vasprun.xml files to XYZ files.
+
+    Args:
+        input_path: Path to a directory where vasprun.xml files are located in itself
+            and its subdirectories.
+        output_path: Path to the output XYZ file.
+        reference_energy: A dictionary of reference energies for each species.
+            In general, one would prefer to reference energy against the free atom
+            energies. If `None`, the reference energy is set to zero. E.g. {"Si":
+            -8.0, 'O': -5.0}.
+
+    """
+    datapoints = VasprunCollectionAdaptor().read(
+        input_path, index=None, name_pattern="vasprun.xml"
+    )
+    adaptor = ExtxyzCollectionAdaptor()
+    adaptor.write(datapoints, output_path, reference_energy=reference_energy)
+
+
 if __name__ == "__main__":
     path = Path.cwd() / "../../tests/test_data/vasp/Si_double_relax"
 
-    vasprun_to_mtp(input_path=path, output_path="~/Desktop/mtp.cfg")
-    vasprun_to_yaml(input_path=path, output_path="~/Desktop/dataset.yaml")
-    vasprun_to_deepmd(input_path=path, output_path="~/Desktop/deepmd_data")
+    # vasprun_to_mtp(input_path=path, output_path="~/Desktop/mtp.cfg")
+    # vasprun_to_yaml(input_path=path, output_path="~/Desktop/dataset.yaml")
+    # vasprun_to_deepmd(input_path=path, output_path="~/Desktop/deepmd_data")
+
+    vasprun_to_xyz(input_path=path, output_path="~/Desktop/xyz")
