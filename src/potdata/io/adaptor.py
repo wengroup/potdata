@@ -230,7 +230,23 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         *,
         reference_energy: dict[str, float] = None,
         mode: str = "w",
+        stress_format: str = "full",
     ):
+        """
+        Write the data point to file.
+
+        Args:
+            datapoint: a DataPoint to convert.
+            path: filename to write the DataPoint.
+            reference_energy: A dictionary of reference energies for each species.
+                In general, one would prefer to reference energy against the free atom
+                energies. If `None`, the reference energy is set to zero.
+            mode: mode to write to the file, e.g. `w` for writing and `a` for appending.
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
+        """
         structure = datapoint.structure
         prop = datapoint.property
 
@@ -242,6 +258,7 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
             energy=datapoint.get_cohesive_energy(reference_energy=reference_energy),
             forces=prop.forces,
             stress=prop.stress,
+            stress_format=stress_format,
         )
         with open(path, mode=mode) as f:
             f.write(s)
@@ -360,6 +377,7 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         energy: float | None = None,
         forces: list[Vector3D] | None = None,
         stress: Matrix3D | None = None,
+        stress_format: str = "full",
     ) -> str:
         """
         Convert the data to extxyz format as a string.
@@ -372,6 +390,10 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
             energy: potential energy of the configuration.
             forces: Nx3 array, forces on atoms.
             stress: stress on the cell.
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
         Returns:
             Extxyz as a string.
         """
@@ -396,11 +418,20 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
 
         if stress is not None:
             s += 'Stress="'
-            for i, row in enumerate(stress):
-                for j, v in enumerate(row):
-                    s += f"{v:.15g} "
-                    if i == 2 and j == 2:
-                        s = s[:-1] + '" '
+
+            if stress_format == "full":
+                for i, row in enumerate(stress):
+                    for j, v in enumerate(row):
+                        s += f"{v:.15g} "
+            elif stress_format == "voigt":
+                s += f"{stress[0][0]:.15g} {stress[1][1]:.15g} {stress[2][2]:.15g} "
+                s += f"{stress[1][2]:.15g} {stress[0][2]:.15g} {stress[0][1]:.15g} "
+            else:
+                supported = ("full", "voigt")
+                raise ValueError(
+                    f"Unknown stress format `{stress_format}`. Support are {supported}."
+                )
+            s = s[:-1] + '" '
 
         properties = "Properties=species:S:1:pos:R:3"
         if forces is not None:
@@ -481,6 +512,7 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
         *,
         reference_energy: dict[str, float] = None,
         separate: bool = True,
+        stress_format: str = "full",
     ) -> list[PathLike]:
         """
         Write the data points to extxyz file(s).
@@ -499,6 +531,10 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
                 are written into it. For example, when `separate=True` and
                 `path=/home/data`, a specific adaptor may write the files as
                 `/home/data/datafile-1.xyz`, `/home/data/datafile-2.xyz`...
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
         """
 
         adaptor = ExtxyzAdaptor()
@@ -507,7 +543,13 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
 
         if not separate:
             for dp in datapoints:
-                adaptor.write(dp, path, reference_energy=reference_energy, mode="a")
+                adaptor.write(
+                    dp,
+                    path,
+                    reference_energy=reference_energy,
+                    mode="a",
+                    stress_format=stress_format,
+                )
             filenames = [path]
 
         else:
@@ -517,7 +559,13 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
                 for i in range(len(datapoints))
             ]
             for f, dp in zip(filenames, datapoints):
-                adaptor.write(dp, f, reference_energy=reference_energy, mode="w")
+                adaptor.write(
+                    dp,
+                    f,
+                    reference_energy=reference_energy,
+                    mode="w",
+                    stress_format=stress_format,
+                )
 
         return filenames
 
