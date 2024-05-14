@@ -24,7 +24,7 @@ from potdata.utils.dataops import remove_none_from_dict, slice_sequence
 from potdata.utils.path import create_directory, to_path
 from potdata.utils.units import kbar_to_eV_per_A_cube
 
-from .utils import create_lattice, get_cell_and_pbc
+from .utils import create_dummy_cell, create_lattice, get_cell_and_pbc
 
 __all__ = [
     "BaseDataPointAdaptor",
@@ -996,7 +996,21 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"{size:>5}\n"
 
         s += " Supercell\n"
-        cell = dp.structure.lattice.matrix
+
+        cell, _ = get_cell_and_pbc(dp.structure)
+
+        # MTP requires a cell. So if the structure does not have a cell, we create a
+        # cell with very large lattice paramters
+        # TODO, check whether cell can be ignored by MTP
+        if cell is None:
+            padding = 100
+            cell = create_dummy_cell(coords, padding)
+            warnings.warn(
+                "No cell information found. Create a dummy supercell with a "
+                f"box size of {padding} in each direction.",
+                stacklevel=2,
+            )
+
         for line in cell:
             for item in line:
                 s += f" {item:>15.6f}"
@@ -1029,19 +1043,24 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"     {energy:.12f}\n"
 
         # stress
-        vs = stress_to_virial(dp.property.stress, dp.structure.lattice.matrix, sign=-1)
-        fmt = "{:>16s}{:>12s}{:>12s}{:>12s}{:>12s}{:>12s}\n"
-        s += fmt.format("PlusStress:  xx", "yy", "zz", "yz", "xz", "xy")
+        if dp.property.stress is not None:
+            vs = stress_to_virial(
+                dp.property.stress, dp.structure.lattice.matrix, sign=-1
+            )
+            fmt = "{:>16s}{:>12s}{:>12s}{:>12s}{:>12s}{:>12s}\n"
+            s += fmt.format("PlusStress:  xx", "yy", "zz", "yz", "xz", "xy")
 
-        s += f"{vs[0][0]:>16.5f}"
-        s += f"{vs[1][1]:>12.5f}"
-        s += f"{vs[2][2]:>12.5f}"
-        s += f"{vs[1][2]:>12.5f}"
-        s += f"{vs[0][2]:>12.5f}"
-        s += f"{vs[0][1]:>12.5f}\n"
+            s += f"{vs[0][0]:>16.5f}"
+            s += f"{vs[1][1]:>12.5f}"
+            s += f"{vs[2][2]:>12.5f}"
+            s += f"{vs[1][2]:>12.5f}"
+            s += f"{vs[0][2]:>12.5f}"
+            s += f"{vs[0][1]:>12.5f}\n"
 
-        #
-        s += " Feature   EFS_by	     VASP\n"
+            s += " Feature   EFS_by	     VASP\n"
+        else:
+            s += " Feature   EF_by	     VASP\n"
+
         s += f" Feature   mindist   {min_dist:.6f}\n"
         s += "END_CFG\n"
 
