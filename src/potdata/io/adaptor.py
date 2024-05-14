@@ -4,6 +4,7 @@ such as extended xyz files, DeepMD format, and ACE format.
 
 import copy
 import random
+import warnings
 from itertools import groupby
 from typing import Any
 
@@ -22,6 +23,8 @@ from potdata.schema.datapoint import DataCollection, DataPoint, Property
 from potdata.utils.dataops import remove_none_from_dict, slice_sequence
 from potdata.utils.path import create_directory, to_path
 from potdata.utils.units import kbar_to_eV_per_A_cube
+
+from .utils import create_dummy_cell, create_lattice, get_cell_and_pbc
 
 __all__ = [
     "BaseDataPointAdaptor",
@@ -227,7 +230,23 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         *,
         reference_energy: dict[str, float] = None,
         mode: str = "w",
+        stress_format: str = "full",
     ):
+        """
+        Write the data point to file.
+
+        Args:
+            datapoint: a DataPoint to convert.
+            path: filename to write the DataPoint.
+            reference_energy: A dictionary of reference energies for each species.
+                In general, one would prefer to reference energy against the free atom
+                energies. If `None`, the reference energy is set to zero.
+            mode: mode to write to the file, e.g. `w` for writing and `a` for appending.
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
+        """
         structure = datapoint.structure
         prop = datapoint.property
 
@@ -239,6 +258,7 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
             energy=datapoint.get_cohesive_energy(reference_energy=reference_energy),
             forces=prop.forces,
             stress=prop.stress,
+            stress_format=stress_format,
         )
         with open(path, mode=mode) as f:
             f.write(s)
@@ -357,6 +377,7 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
         energy: float | None = None,
         forces: list[Vector3D] | None = None,
         stress: Matrix3D | None = None,
+        stress_format: str = "full",
     ) -> str:
         """
         Convert the data to extxyz format as a string.
@@ -369,6 +390,10 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
             energy: potential energy of the configuration.
             forces: Nx3 array, forces on atoms.
             stress: stress on the cell.
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
         Returns:
             Extxyz as a string.
         """
@@ -393,11 +418,20 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
 
         if stress is not None:
             s += 'Stress="'
-            for i, row in enumerate(stress):
-                for j, v in enumerate(row):
-                    s += f"{v:.15g} "
-                    if i == 2 and j == 2:
-                        s = s[:-1] + '" '
+
+            if stress_format == "full":
+                for i, row in enumerate(stress):
+                    for j, v in enumerate(row):
+                        s += f"{v:.15g} "
+            elif stress_format == "voigt":
+                s += f"{stress[0][0]:.15g} {stress[1][1]:.15g} {stress[2][2]:.15g} "
+                s += f"{stress[1][2]:.15g} {stress[0][2]:.15g} {stress[0][1]:.15g} "
+            else:
+                supported = ("full", "voigt")
+                raise ValueError(
+                    f"Unknown stress format `{stress_format}`. Support are {supported}."
+                )
+            s = s[:-1] + '" '
 
         properties = "Properties=species:S:1:pos:R:3"
         if forces is not None:
@@ -478,6 +512,7 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
         *,
         reference_energy: dict[str, float] = None,
         separate: bool = True,
+        stress_format: str = "full",
     ) -> list[PathLike]:
         """
         Write the data points to extxyz file(s).
@@ -495,7 +530,11 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
                 the files. In this case `path` is typically a directory and the files
                 are written into it. For example, when `separate=True` and
                 `path=/home/data`, a specific adaptor may write the files as
-                `/home/data/datafile-1.json`, `/home/data/datafile-2.json`...
+                `/home/data/datafile-1.xyz`, `/home/data/datafile-2.xyz`...
+            stress_format: format of the stress tensor. Options are "full" or "voigt".
+                If `full`, the 9 components of the stress tensor are provided. If
+                `voigt`, the 6 components of the stress tensor s11, s22, s33, s23, s13,
+                s12 are provided.
         """
 
         adaptor = ExtxyzAdaptor()
@@ -504,7 +543,13 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
 
         if not separate:
             for dp in datapoints:
-                adaptor.write(dp, path, reference_energy=reference_energy, mode="a")
+                adaptor.write(
+                    dp,
+                    path,
+                    reference_energy=reference_energy,
+                    mode="a",
+                    stress_format=stress_format,
+                )
             filenames = [path]
 
         else:
@@ -514,7 +559,13 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
                 for i in range(len(datapoints))
             ]
             for f, dp in zip(filenames, datapoints):
-                adaptor.write(dp, f, reference_energy=reference_energy, mode="w")
+                adaptor.write(
+                    dp,
+                    f,
+                    reference_energy=reference_energy,
+                    mode="w",
+                    stress_format=stress_format,
+                )
 
         return filenames
 
@@ -600,20 +651,179 @@ class YAMLCollectionAdaptor(BaseDataCollectionAdaptor):
         return [path]
 
 
+class JSONCollectionAdaptor(BaseDataCollectionAdaptor):
+    """
+    A data collection adaptor that reads/writes data points from/to JSON file.
+
+    The JSON file is storted like using a pandas DataFrame, where a single key is used
+    for all data points. e.g.
+    {'coords': [coords of structure 1, coords of structure 2, ...],
+        'species': [species of structure 1, species of structure 2 ...],
+        ...
+     'energy': [energy of structure 1, energy of structure 2, ...],
+        ...
+    }
+
+    Args:
+        coords_key: key for the coordinates in the json file. Default to "coords".
+        species_key: key for the species in the json file. Default to "species".
+        cell_key: key for the cell in the json file. Default to "cell". If None, no
+            cell will be read/write.
+        pbc_key: key for the periodic boundary conditions in the json file. Default to
+            "pbc". If None, no pbc will be read/write.
+        energy_key: key for the energy in the json file. Default to "energy".
+        forces_key: key for the forces in the json file. Default to "forces". If None,
+            or the key cannot be found, forces will not be read/write.
+        stress_key: key for the stress in the json file. Default to "stress". If None,
+            or the key cannot be found, stress will not be read/write.
+    """
+
+    def __init__(
+        self,
+        coords_key: str = "coords",
+        species_key: str = "species",
+        cell_key: str = "cell",
+        pbc_key: str = "pbc",
+        energy_key: str = "energy",
+        forces_key: str = "forces",
+        stress_key: str = "stress",
+    ):
+        # structure keys
+        self.coords_key = coords_key
+        self.cell_key = cell_key
+        self.species_key = species_key
+        self.pbc_key = pbc_key
+
+        # property keys
+        self.energy_key = energy_key
+        self.forces_key = forces_key
+        self.stress_key = stress_key
+
+    def read(self, path: PathLike) -> DataCollection:  # type: ignore[override]
+        """
+        Read the data collection from a JSON file.
+
+        It can be a list of DataPoints or a DataCollection.
+
+        Args:
+            path: path to the JSON file.
+
+        Returns:
+            A list of data points.
+        """
+        df = pd.read_json(to_path(path))
+
+        for k in [self.coords_key, self.species_key, self.energy_key]:
+            if k not in df.columns:
+                raise ValueError(f"Cannot find key `{k}` in the file `{path}`.")
+
+        for k in [self.cell_key, self.pbc_key, self.forces_key, self.stress_key]:
+            if k is not None and k not in df.columns:
+                warnings.warn(f"Cannot find key `{k}` in the file `{path}`. Ignored.")
+
+        data_points = []
+        for i, row in df.iterrows():
+            # structure
+            coords = row[self.coords_key]
+            species = row[self.species_key]
+            cell = row.get(self.cell_key, None)
+            pbc = row.get(self.pbc_key, None)
+
+            # TODO, the below line should be done for all adaptors
+            lattice, use_lattice = create_lattice(cell, pbc, coords)
+
+            structure = Structure(
+                lattice=lattice,
+                species=species,
+                coords=coords,
+                coords_are_cartesian=True,
+                properties={"use_lattice": use_lattice},
+            )
+
+            # property
+            y = {}
+            y["energy"] = row[self.energy_key]
+            y["forces"] = row.get(self.forces_key, None)
+            y["stress"] = row.get(self.stress_key, None)
+
+            data_points.append(DataPoint(structure=structure, property=Property(**y)))
+
+        dc = DataCollection(data_points=data_points)
+
+        return dc
+
+    def write(
+        self,
+        data: DataCollection,
+        path: PathLike,
+        *,
+        reference_energy: dict[str, float] = None,
+    ) -> PathLike:
+        """
+        Write the data collection to a json file.
+
+
+        """
+        data_points = data.data_points
+
+        data_dict = {
+            self.coords_key: [dp.structure.cart_coords for dp in data_points],
+            self.species_key: [dp.structure.species for dp in data_points],
+            self.energy_key: [
+                dp.get_cohesive_energy(reference_energy=reference_energy)
+                for dp in data_points
+            ],
+        }
+
+        if self.cell_key is not None:
+            cell = []
+            pbc = []
+            for dp in data_points:
+                c, p = get_cell_and_pbc(dp.structure)
+                cell.append(c)
+                pbc.append(p)
+            data_dict[self.cell_key] = cell
+            data_dict[self.pbc_key] = pbc
+
+        if self.forces_key is not None:
+            data_dict[self.forces_key] = [dp.property.forces for dp in data_points]
+        if self.stress_key is not None:
+            data_dict[self.stress_key] = [dp.property.stress for dp in data_points]
+
+        df = pd.DataFrame(data_dict)
+
+        df.to_json(path)
+
+        return path
+
+
 class PymatgenCollectionAdaptor(BaseDataCollectionAdaptor):
     """
     A data collection adaptor that reads/writes data points from/to pymatgen structure
     and the corresponding targets.
 
-    The file are saved as a json.
+    The input/output will be a json file.
 
-    The input/output will be a json file, with the below keys:
-        - structure: a pymatgen structure
-        - energy: energy of the structure
-    and optionally, the below keys:
-        - forces: forces on the atoms
-        - stress: virialstress on the cell
+    Args:
+        structure_key: key for the structure in the json file. Default to "structure".
+        energy_key: key for the energy in the json file. Default to "energy".
+        forces_key: key for the forces in the json file. Default to "forces". If None,
+            or the key cannot be found, forces will not be read/write.
+        stress_key: key for the stress in the json file. Default to "stress". If None,
+            or the key cannot be found, stress will not be read/write.
     """
+
+    def __init__(
+        self,
+        structure_key: str = "structure",
+        energy_key: str = "energy",
+        forces_key: str = "forces",
+        stress_key: str = "stress",
+    ):
+        self.structure_key = structure_key
+        self.energy_key = energy_key
+        self.forces_key = forces_key
+        self.stress_key = stress_key
 
     def read(self, path: PathLike) -> DataCollection:  # type: ignore[override]
         """
@@ -623,18 +833,26 @@ class PymatgenCollectionAdaptor(BaseDataCollectionAdaptor):
         to a directory.
 
         """
-        path = to_path(path)
-        df = pd.read_json(path)
-        df["structure"] = df["structure"].apply(lambda s: Structure.from_dict(s))
+        df = pd.read_json(to_path(path))
+        df["structure"] = df[self.structure_key].apply(lambda s: Structure.from_dict(s))
+
+        # check required keys are present
+        for k in [self.structure_key, self.energy_key]:
+            if k not in df.columns:
+                raise ValueError(f"Cannot find key `{k}` in the file `{path}`.")
+
+        # check if optional keys are present
+        for k in [self.forces_key, self.stress_key]:
+            if k is not None and k not in df.columns:
+                warnings.warn(f"Cannot find key `{k}` in the file `{path}`. Ignore it.")
 
         data_points = []
         for i, row in df.iterrows():
             y = {}
-            for p in ["energy", "forces", "stress"]:
-                if p in row:
-                    y[p] = row[p]
-                else:
-                    y[p] = None
+            y["energy"] = row[self.energy_key]
+            y["forces"] = row.get(self.forces_key, None)
+            y["stress"] = row.get(self.stress_key, None)
+
             dp = DataPoint(structure=row["structure"], property=Property(**y))
             data_points.append(dp)
 
@@ -666,7 +884,7 @@ class PymatgenCollectionAdaptor(BaseDataCollectionAdaptor):
 
         data_points = data.data_points
 
-        data_dict = {"structure": [dp.structure.as_dict() for dp in data_points]}
+        data_dict = {self.structure_key: [dp.structure.as_dict() for dp in data_points]}
 
         energy = [
             dp.get_cohesive_energy(reference_energy=reference_energy)
@@ -676,11 +894,11 @@ class PymatgenCollectionAdaptor(BaseDataCollectionAdaptor):
         stress = [dp.property.stress for dp in data_points]
 
         if None not in energy:
-            data_dict["energy"] = energy
+            data_dict[self.energy_key] = energy
         if None not in forces:
-            data_dict["forces"] = forces
+            data_dict[self.forces_key] = forces
         if None not in stress:
-            data_dict["stress"] = stress
+            data_dict[self.stress_key] = stress
 
         df = pd.DataFrame(data_dict)
 
@@ -826,7 +1044,21 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"{size:>5}\n"
 
         s += " Supercell\n"
-        cell = dp.structure.lattice.matrix
+
+        cell, _ = get_cell_and_pbc(dp.structure)
+
+        # MTP requires a cell. So if the structure does not have a cell, we create a
+        # cell with very large lattice paramters
+        # TODO, check whether cell can be ignored by MTP
+        if cell is None:
+            padding = 100
+            cell = create_dummy_cell(coords, padding)
+            warnings.warn(
+                "No cell information found. Create a dummy supercell with a "
+                f"box size of {padding} in each direction.",
+                stacklevel=2,
+            )
+
         for line in cell:
             for item in line:
                 s += f" {item:>15.6f}"
@@ -859,19 +1091,24 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"     {energy:.12f}\n"
 
         # stress
-        vs = stress_to_virial(dp.property.stress, dp.structure.lattice.matrix, sign=-1)
-        fmt = "{:>16s}{:>12s}{:>12s}{:>12s}{:>12s}{:>12s}\n"
-        s += fmt.format("PlusStress:  xx", "yy", "zz", "yz", "xz", "xy")
+        if dp.property.stress is not None:
+            vs = stress_to_virial(
+                dp.property.stress, dp.structure.lattice.matrix, sign=-1
+            )
+            fmt = "{:>16s}{:>12s}{:>12s}{:>12s}{:>12s}{:>12s}\n"
+            s += fmt.format("PlusStress:  xx", "yy", "zz", "yz", "xz", "xy")
 
-        s += f"{vs[0][0]:>16.5f}"
-        s += f"{vs[1][1]:>12.5f}"
-        s += f"{vs[2][2]:>12.5f}"
-        s += f"{vs[1][2]:>12.5f}"
-        s += f"{vs[0][2]:>12.5f}"
-        s += f"{vs[0][1]:>12.5f}\n"
+            s += f"{vs[0][0]:>16.5f}"
+            s += f"{vs[1][1]:>12.5f}"
+            s += f"{vs[2][2]:>12.5f}"
+            s += f"{vs[1][2]:>12.5f}"
+            s += f"{vs[0][2]:>12.5f}"
+            s += f"{vs[0][1]:>12.5f}\n"
 
-        #
-        s += " Feature   EFS_by	     VASP\n"
+            s += " Feature   EFS_by	     VASP\n"
+        else:
+            s += " Feature   EF_by	     VASP\n"
+
         s += f" Feature   mindist   {min_dist:.6f}\n"
         s += "END_CFG\n"
 

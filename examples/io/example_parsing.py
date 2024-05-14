@@ -103,6 +103,7 @@ def vasprun_to_xyz(
     input_path: PathLike,
     output_path: PathLike,
     reference_energy: dict[str, float] = None,
+    stress_format: str = "full",
 ):
     """Convert vasprun.xml files to XYZ files.
 
@@ -120,7 +121,12 @@ def vasprun_to_xyz(
         input_path, index=None, name_pattern="vasprun.xml"
     )
     adaptor = ExtxyzCollectionAdaptor()
-    adaptor.write(datapoints, output_path, reference_energy=reference_energy)
+    adaptor.write(
+        datapoints,
+        output_path,
+        reference_energy=reference_energy,
+        stress_format=stress_format,
+    )
 
 
 if __name__ == "__main__":
@@ -130,4 +136,4 @@ if __name__ == "__main__":
     # vasprun_to_yaml(input_path=path, output_path="~/Desktop/dataset.yaml")
     # vasprun_to_deepmd(input_path=path, output_path="~/Desktop/deepmd_data")
 
-    vasprun_to_xyz(input_path=path, output_path="~/Desktop/xyz")
+    vasprun_to_xyz(input_path=path, output_path="~/Desktop/xyz", stress_format="voigt")

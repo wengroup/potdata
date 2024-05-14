@@ -92,13 +92,20 @@ class Weight(BaseModel):
 class DataPoint(BaseModel):
     """A data point of a pair of configuration and the property associated with it."""
 
+    # To deal with structures with no simulation box, (e.g. molecules), we add to
+    # `Structure.properties` a key "use_lattice".
+    # 1. By default, `use_lattice = True`, meaning that the structure.lattice should be
+    # considered.
+    # 2. If `use_lattice = False`, the structure.lattice should be ignored.
+    # 3. If `use_lattice` is not present in `Stucture.properties`, it is assumed to be
+    # True.
+
     structure: Structure = Field(description="An atomic configuration.")
 
     property: Property = Field(
         description="Properties associated with the configuration."
     )
 
-    # TODO, change None to a default value
     weight: Weight = Field(
         default_factory=Weight, description="Weight for the configuration."
     )
