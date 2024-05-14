@@ -85,7 +85,7 @@ def create_lattice(
         if pbc is not None:
             lattice = Lattice(cell, pbc)
         else:
-            lattice = Lattice(cell)
+            lattice = Lattice(cell, pbc=(True, True, True))
 
         has_cell = True
     else:
@@ -101,7 +101,7 @@ def get_cell_and_pbc(
     """
     Get the cell and pbc from a pymatgen Structure object.
 
-    This depends on whether Structure.property['use_lattice'] is True or False.
+    This depends on whether Structure.properties['use_lattice'] is True or False.
 
     Args:
         structure: pymatgen Structure object
@@ -111,7 +111,7 @@ def get_cell_and_pbc(
         pbc: tuple of 3 booleans representing the periodic boundary conditions.
     """
 
-    if structure.property.get("use_lattice", True):
+    if structure.properties.get("use_lattice", True):
         cell = structure.lattice.matrix
         pbc = structure.lattice.pbc
     else:
