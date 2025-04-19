@@ -3,7 +3,7 @@
 import abc
 import warnings
 from typing import Any, Sequence
-
+import random
 import numpy as np
 from monty.dev import requires
 from monty.json import MSONable
@@ -863,12 +863,14 @@ class ACEGammaSampler(BaseStructureSampler):
         gamma_range: tuple[float, float] = None,
         gamma_reduce: str = "max",
         verbose: int = 0,
+        sample_size: int = None,
     ):
         self.potential_filename = potential_filename
         self.potential_asi_filename = potential_asi_filename
         self.gamma_range = gamma_range
         self.gamma_reduce = gamma_reduce
         self.verbose = verbose
+        self.sample_size = sample_size
 
         self._indices: list[int] = None
 
@@ -927,6 +929,13 @@ class ACEGammaSampler(BaseStructureSampler):
                 f"No structures found within the gamma range: {self.gamma_range}."
             )
 
+        # random sample
+        if self.sample_size is not None and self.sample_size < len(selected):
+            chosen = random.sample(list(zip(selected, selected_indices)), self.sample_size)
+            selected, selected_indices = zip(*chosen)
+            selected = list(selected)
+            selected_indices = list(selected_indices)
+        
         # save gamma data if requested
         if self.verbose > 0:
             dumpfn(gamma_data, "gamma_data.yaml")
