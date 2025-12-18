@@ -4,7 +4,6 @@ from potdata.io.adaptor import (
     ACECollectionAdaptor,
     ExtxyzAdaptor,
     ExtxyzCollectionAdaptor,
-    MTPCollectionAdaptor,
     VasprunAdaptor,
     VasprunCollectionAdaptor,
     YAMLCollectionAdaptor,
@@ -102,18 +101,6 @@ def test_ace_collection_adaptor(fitting_data_collection, tmpdir):
                 # remove stress, because data points uses stress, ace uses virial
                 property_fields_to_remove=("stress",),
             )
-
-
-def test_mtp_collection_adaptor(fitting_data_collection, tmpdir):
-    adaptor = MTPCollectionAdaptor()
-
-    coords = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]]
-    assert adaptor._get_min_dist(coords) == 2**0.5
-
-    # TODO, add more tests
-    with tmpdir.as_cwd():
-        filename = "mtp_data.cfg"
-        adaptor.write(fitting_data_collection, filename, reference_energy=None)
 
 
 def _compare_two_data_points(
