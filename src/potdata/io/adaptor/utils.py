@@ -142,3 +142,23 @@ def stress_to_virial(stress: Matrix3D, cell: Matrix3D, sign: float = 1.0) -> np.
     virial = sign * np.asarray(stress) * volume
 
     return virial
+
+
+def virial_to_stress(virial: Matrix3D, cell: Matrix3D, sign: float = 1.0) -> np.ndarray:
+    """
+    Convert virial tensor to stress tensor.
+
+    Args:
+        virial: Virial tensor.
+        cell: Unit cell.
+        sign: Sign of the virial tensor. Default to 1. Use -1 if the virial is from
+            VASP convention.
+
+    Returns:
+        Stress tensor.
+    """
+    volume = np.abs(np.dot(cell[0], np.cross(cell[1], cell[2])))
+
+    stress = sign * np.asarray(virial) / volume
+
+    return stress
