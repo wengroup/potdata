@@ -1,6 +1,8 @@
 import numpy as np
 from pymatgen.core import Lattice, Structure
 
+from potdata._typing import Matrix3D
+
 
 def get_coords_range(
     coords: np.ndarray,
@@ -120,3 +122,23 @@ def get_cell_and_pbc(
         pbc = None
 
     return cell, pbc
+
+
+def stress_to_virial(stress: Matrix3D, cell: Matrix3D, sign: float = 1.0) -> np.ndarray:
+    """
+    Convert stress tensor to virial tensor.
+
+    Args:
+        stress: Stress tensor.
+        cell: Unit cell.
+        sign: Sign of the virial tensor. Default to 1. Use -1 to get virial to VASP
+            convention.
+
+    Returns:
+        Virial tensor.
+    """
+    volume = np.abs(np.dot(cell[0], np.cross(cell[1], cell[2])))
+
+    virial = sign * np.asarray(stress) * volume
+
+    return virial
