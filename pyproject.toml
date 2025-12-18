@@ -13,7 +13,7 @@ dependencies = [
     "ase",
     "emmet-core",
     "scikit-learn",
-    "pydantic>=2.0",
+    "pydantic",
 ]
 
 [project.optional-dependencies]

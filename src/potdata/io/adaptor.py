@@ -460,6 +460,8 @@ class ExtxyzCollectionAdaptor(BaseDataCollectionAdaptor):
         """
         Read the data points from extxyz file(s).
 
+        This will read all files in the directory and subdirectories with the extension.
+
         Args:
             path: path to a directory to hold the file(s) or path to a file with all
                 the extended xyz configurations concatenated.
@@ -991,6 +993,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         path: PathLike,
         *,
         reference_energy: dict[str, float] = None,
+        cell_padding: float = None,
     ) -> PathLike:
         """
         Write the data points to MTP cfg format.
@@ -1001,7 +1004,13 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
             reference_energy: A dictionary of reference energies for each species.
                 In general, one would prefer to reference energy against the free atom
                 energies. If `None`, the reference energy is set to zero.
-
+            cell_padding: padding to add to the cell. MTP can only work with periodic
+                structures with a cell. This is a workaround to create a cell for
+                structures without a cell (e.g. molecular structures). The cell is
+                created by adding `cell_padding` to the maximum distance between atoms
+                in each of the x, y, z directions.
+                Note that for structures with a cell, the cell is used as is and this
+                argument is ignored.
         Returns: path to the file written.
         """
 
@@ -1009,7 +1018,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
 
         s = ""
         for dp in data.data_points:
-            s += self.as_string(dp, species_map, reference_energy) + "\n"
+            s += self.as_string(dp, species_map, reference_energy, cell_padding) + "\n"
 
         path = to_path(path)
         with open(path, "w") as f:
@@ -1022,6 +1031,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         dp: DataPoint,
         species_map: dict[str, int],
         reference_energy: dict[str, float] = None,
+        cell_padding: float = None,
     ) -> str:
         """
         Convert a data point to a string in MTP cfg format.
@@ -1030,6 +1040,7 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
             dp: data point to convert.
             species_map: A dictionary of species string to species integer.
             reference_energy: A dictionary of reference energies for each species.
+            cell_padding: padding to add to the cell.
 
         Returns:
             A configuration in MTP cfg format as a string.
@@ -1044,18 +1055,28 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
         s += f"{size:>5}\n"
 
         s += " Supercell\n"
-
         cell, _ = get_cell_and_pbc(dp.structure)
 
         # MTP requires a cell. So if the structure does not have a cell, we create a
         # cell with very large lattice paramters
-        # TODO, check whether cell can be ignored by MTP
         if cell is None:
-            padding = 100
-            cell = create_dummy_cell(coords, padding)
+            if cell_padding is None:
+                raise RuntimeError(
+                    "For structures without a cell (e.g. molecuels), `cell_padding` "
+                    "must be provided to create a dummy cell since MTP can only work "
+                    "with periodic structures. The cell is created by adding "
+                    "`cell_padding` to the maximum distance between atoms in each of "
+                    "the x, y, z directions.\n"
+                    "The padding should be chosen such at the atoms do not interact "
+                    "with their periodic images. As a result, the padding should be "
+                    "larger than the cutoff radius of your model. For exmaple, "
+                    "1.1*r_cut would be a good choice.\n"
+                    "Note also, if you increase your model cutoff radius, you probably "
+                    "need to increase the padding accordingly."
+                )
+            cell = create_dummy_cell(coords, cell_padding)
             warnings.warn(
-                "No cell information found. Create a dummy supercell with a "
-                f"box size of {padding} in each direction.",
+                f"No cell information found. Create a dummy supercell {cell}.",
                 stacklevel=2,
             )
 
