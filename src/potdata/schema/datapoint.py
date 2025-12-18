@@ -67,6 +67,18 @@ class Property(BaseModel):
         description="Stress on the simulation box. Example units: eV/A^3.",
     )
 
+    magmon: Optional[list[Vector3D]] = Field(
+        None,
+        description="Magnetic moments on atoms. Shape: (N, 3), where N is the number "
+        "of atoms in the configuration. Example units: mu_B.",
+    )
+
+    magnetic_forces: Optional[list[Vector3D]] = Field(
+        None,
+        description="Magnetic forces on atoms. Shape: (N, 3), where N is the number of "
+        "atoms in the configuration. Example units: eV/mu_B.",
+    )
+
 
 class Weight(BaseModel):
     """Weight used in loss function for a configuration."""
