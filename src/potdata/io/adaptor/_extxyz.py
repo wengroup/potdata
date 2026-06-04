@@ -138,7 +138,7 @@ class ExtxyzAdaptor(BaseDataPointAdaptor):
                 line = ln.strip().split()
                 if len(line) != 4 and len(line) != 7:
                     raise ValueError(
-                        f"Corrupted data at line {num_lines + 3} of file " f"`{path}`."
+                        f"Corrupted data at line {num_lines + 3} of file `{path}`."
                     )
                 if has_forces:
                     symbol, x, y, z, fx, fy, fz = line

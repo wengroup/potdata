@@ -1,6 +1,6 @@
 """Base adaptor to convert data format."""
 
-from monty.json import MSONable, jsanitize
+from monty.json import MSONable
 
 from potdata._typing import PathLike
 from potdata.schema.datapoint import DataCollection, DataPoint

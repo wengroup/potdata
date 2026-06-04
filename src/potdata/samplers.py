@@ -334,7 +334,7 @@ class BaseStructureSamplerWithSoap(BaseStructureSampler):
         else:
             supported = ["mean", "concatenate"]
             raise ValueError(
-                f"Unsupported pooling method `{pool}`. Expected one of " f"{supported}."
+                f"Unsupported pooling method `{pool}`. Expected one of {supported}."
             )
 
     @staticmethod

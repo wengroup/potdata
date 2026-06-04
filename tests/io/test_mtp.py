@@ -17,4 +17,4 @@ def test_mtp_adaptor(tmpdir, test_data_dir):
         filename = "mtp_data.cfg"
         adaptor.write(dc, filename, reference_energy=None)
 
-        dc2 = adaptor.read(filename, type_map={0: "Al", 1: "Fe"})
+        adaptor.read(filename, type_map={0: "Al", 1: "Fe"})
