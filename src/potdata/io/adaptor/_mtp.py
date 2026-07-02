@@ -157,6 +157,11 @@ class MTPCollectionAdaptor(BaseDataCollectionAdaptor):
 
             virial = None
             if "PlusStress:" in lines[e_line_idx + 1]:
+                # MLIP stores VASP's extensive "FORCE on cell = -STRESS" tensor
+                # in eV as PlusStress. Convert to conventional intensive stress
+                # in eV/A^3 below with -PlusStress / volume.
+                # See mlip-3 src/configuration.cpp and its convert_vasp_outcar
+                # OUTCAR example for the "FORCE on cell =-STRESS" Total block.
                 val = lines[e_line_idx + 2].strip().split()
                 virial = np.zeros((3, 3), dtype=float)
                 virial[0, 0] = float(val[0])
